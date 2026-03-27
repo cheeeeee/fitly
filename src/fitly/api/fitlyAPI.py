@@ -550,6 +550,10 @@ class FitlyActivity(stravalib.model.Activity):
             self.df_samples['act_name'] = self.name
 
     def calculate_power_zones(self):
+        # Drop duplicate timestamps
+        if self.df_samples is not None and not self.df_samples.empty:
+            self.df_samples = self.df_samples[~self.df_samples.index.duplicated(keep='first')]
+    # Continue
         if self.max_watts is not None:
             if self.ftp is not None:
                 if 'ride' in self.type.lower():
@@ -558,27 +562,25 @@ class FitlyActivity(stravalib.model.Activity):
                     pz_5, pz_6 = 99, 99
                 self.df_samples['power_zone'] = np.nan
 
-                for i in self.df_samples.index:
-                    watts = self.df_samples.loc[i].watts
-                    if watts is not None:
-                        if watts <= round(self.ftp * self.power_zones[1]):
-                            self.df_samples.at[i, 'power_zone'] = 1
-                        elif watts <= round(self.ftp * self.power_zones[2]):
-                            self.df_samples.at[i, 'power_zone'] = 2
-                        elif watts <= round(self.ftp * self.power_zones[3]):
-                            self.df_samples.at[i, 'power_zone'] = 3
-                        elif watts <= round(self.ftp * self.power_zones[4]):
-                            self.df_samples.at[i, 'power_zone'] = 4
-                        elif watts <= round(self.ftp * pz_5):
-                            self.df_samples.at[i, 'power_zone'] = 5
-                        elif watts <= round(self.ftp * pz_6):
-                            self.df_samples.at[i, 'power_zone'] = 6
-                        else:
-                            self.df_samples.at[i, 'power_zone'] = 7
-                    else:
-                        return np.nan
+                # --- RIP OUT THE FOR LOOP AND REPLACE WITH THIS ---
+                watts = self.df_samples['watts']
+                conditions = [
+                    watts <= round(self.ftp * self.power_zones[1]),
+                    watts <= round(self.ftp * self.power_zones[2]),
+                    watts <= round(self.ftp * self.power_zones[3]),
+                    watts <= round(self.ftp * self.power_zones[4]),
+                    watts <= round(self.ftp * pz_5),
+                    watts <= round(self.ftp * pz_6),
+                    watts > round(self.ftp * pz_6)
+                ]
+                choices = [1, 2, 3, 4, 5, 6, 7]
+                self.df_samples['power_zone'] = np.select(conditions, choices, default=np.nan)
 
     def calculate_heartate_zones(self):
+    # Drop duplicate timestamps to prevent .loc[i] from returning DataFrames
+        if self.df_samples is not None and not self.df_samples.empty:
+            self.df_samples = self.df_samples[~self.df_samples.index.duplicated(keep='first')]
+    # Continue
         if self.max_heartrate is not None:
             age = relativedelta(datetime.today(), self.Athlete.birthday).years
             self.athlete_max_hr = 220 - age
@@ -590,21 +592,17 @@ class FitlyActivity(stravalib.model.Activity):
             z4 = round((self.hrr * self.hearrate_zones[4]) + self.rhr)
 
             self.df_samples['hr_zone'] = np.nan
-            for i in self.df_samples.index:
-                heartrate = self.df_samples.loc[i].heartrate
-                if heartrate is not None:
-                    if heartrate <= z1:
-                        self.df_samples.at[i, 'hr_zone'] = 1
-                    elif heartrate <= z2:
-                        self.df_samples.at[i, 'hr_zone'] = 2
-                    elif heartrate <= z3:
-                        self.df_samples.at[i, 'hr_zone'] = 3
-                    elif heartrate <= z4:
-                        self.df_samples.at[i, 'hr_zone'] = 4
-                    else:
-                        self.df_samples.at[i, 'hr_zone'] = 5
-                else:
-                    return np.nan
+            # --- RIP OUT THE FOR LOOP AND REPLACE WITH THIS ---
+            hr = self.df_samples['heartrate']
+            conditions = [
+                hr <= z1,
+                hr <= z2,
+                hr <= z3,
+                hr <= z4,
+                hr > z4
+            ]
+            choices = [1, 2, 3, 4, 5]
+            self.df_samples['hr_zone'] = np.select(conditions, choices, default=np.nan)
 
     # https://www.movescount.com/apps/app10925786-Strava_Suffer_Score
     # def strava_suffer_score(self):
@@ -698,7 +696,7 @@ class FitlyActivity(stravalib.model.Activity):
                 df['athlete_id'] = self.Athlete.athlete_id
                 df['ftp'] = self.ftp
                 df.set_index(['activity_id', 'interval'], inplace=True)
-                df.to_sql('strava_best_samples', engine, if_exists='append', index=True)
+                df.to_sql('strava_best_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
 
     def sweatpy_cp_model(self, model='3_parameter_non_linear'):
         # Models that can be passed = '2_parameter_non_linear', '3_parameter_non_linear', 'extended_5_3','extended_7_3'
@@ -721,8 +719,8 @@ class FitlyActivity(stravalib.model.Activity):
         self.df_samples['type'] = self.type
         self.df_samples['athlete_id'] = self.Athlete.athlete_id
 
-        self.df_summary.fillna(np.nan).to_sql('strava_summary', engine, if_exists='append', index=True)
-        self.df_samples.fillna(np.nan).to_sql('strava_samples', engine, if_exists='append', index=True)
+        self.df_summary.fillna(np.nan).to_sql('strava_summary', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+        self.df_samples.fillna(np.nan).to_sql('strava_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
 
 
 def training_workflow(min_non_warmup_workout_time, metric='hrv_baseline', athlete_id=1):
@@ -757,7 +755,7 @@ def training_workflow(min_non_warmup_workout_time, metric='hrv_baseline', athlet
                 db_test.at[min_oura_date, 'workout_step_desc'] = 'Low'
                 db_test.at[min_oura_date, 'completed'] = 0
                 db_test.at[min_oura_date, 'rationale'] = 'This is the first date hrv thresholds could be calculated'
-                db_test.to_sql('workout_step_log', engine, if_exists='append', index=True)
+                db_test.to_sql('workout_step_log', engine, if_exists='append', index=True, method='multi', chunksize=1000)
             except BaseException as e:
                 app.server.logger.error(f'Check enough oura data exists to generate workout recommendation: {e}')
                 oura_data_exists = False
@@ -954,7 +952,7 @@ def training_workflow(min_non_warmup_workout_time, metric='hrv_baseline', athlet
                     # Insert into db
                     df = df[['athlete_id', 'date', 'workout_step', 'workout_step_desc', 'completed', 'rationale']]
                     df['date'] = df['date'].dt.date
-                    df.to_sql('workout_step_log', engine, if_exists='append', index=False)
+                    df.to_sql('workout_step_log', engine, if_exists='append', index=False, method='multi', chunksize=1000)
                     # Bookmark peloton classes
                     if peloton_credentials_supplied:
                         set_peloton_workout_recommendations()

@@ -6,6 +6,7 @@ from .utils import get_dash_args_from_flask_config
 from sqlalchemy.orm import scoped_session
 from .api.database import SessionLocal, engine
 from .api.sqlalchemy_declarative import *
+from sqlalchemy import event
 from datetime import datetime
 
 
@@ -24,6 +25,14 @@ def create_flask(config_object=f"{__package__}.settings"):
 
     return server
 
+# SQL w/ WAL
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA cache_size=-200000")
+    cursor.close()
 
 def create_dash(server):
     Base.metadata.create_all(bind=engine)
@@ -58,7 +67,7 @@ def db_startup(app):
     athlete_exists = True if len(app.session.query(athlete).all()) > 0 else False
     # If no athlete created in db, create one
     if not athlete_exists:
-        dummy_athlete = athlete(name='New User')
+        dummy_athlete = athlete(name='Will', ride_ftp=300, run_ftp=300)
         app.session.add(dummy_athlete)
         app.session.commit()
 
