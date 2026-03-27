@@ -27,6 +27,7 @@ import json
 import ast
 import urllib.parse as urlparse
 from urllib.parse import parse_qs
+from dash import no_update
 
 strava_auth_client = get_strava_client()
 withings_auth_client = WithingsAuth(config.get('withings', 'client_id'), config.get('withings', 'client_secret'),
@@ -1354,6 +1355,18 @@ def save_peloton_bookmark_settings(n_clicks, fitness_discipline, effort, options
 def settings_dashboard(n_clicks, password):
     if n_clicks and n_clicks > 0:
         if password == config.get('settings', 'password'):
-            return generate_settings_dashboard(), False
+            try:
+                # Try to load the dashboard for the authenticated user
+                return generate_settings_dashboard(), False
+            except Exception as e:
+                # OOBE Catch: If the DB is completely empty and generating the dashboard fails,
+                # do not crash Dash. Keep the modal open so they can authenticate.
+                print(f"OOBE Catch - Dashboard Generation Failed: {e}")
+                return no_update, True
+        else:
+            # THE FIX: If the password is wrong, do not return None. 
+            # Tell the layout to stay exactly the same and keep the modal open.
+            return no_update, True
     else:
+        # Initial page load: render an empty layout and force the modal open
         return [], True
