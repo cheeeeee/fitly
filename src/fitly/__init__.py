@@ -76,8 +76,12 @@ def db_startup(app):
             resting_hr=50,
             sex='M'
         )
+        app.session.add(dummy_athlete)
+        app.session.commit()
 
+    # Check for refresh record AFTER the athlete commit
     db_refresh_record = True if len(app.session.query(dbRefreshStatus).all()) > 0 else False
+    
     # Insert initial system load refresh record
     if not db_refresh_record:
         dummy_db_refresh_record = dbRefreshStatus(
@@ -89,6 +93,8 @@ def db_startup(app):
             fitbod_status='System Startup')
         app.session.add(dummy_db_refresh_record)
         app.session.commit()
+
+    # ... rest of the fitbod_muscles code stays the same ...
 
     # If fitbod_muslces table not populated create
     fitbod_muscles_table = True if len(app.session.query(fitbod_muscles).all()) > 0 else False
