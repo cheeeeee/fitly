@@ -8,7 +8,6 @@ from .api.database import SessionLocal, engine
 from .api.sqlalchemy_declarative import *
 from sqlalchemy import event
 from datetime import datetime
-from .models import dbRefreshStatus
 
 
 def create_flask(config_object=f"{__package__}.settings"):
