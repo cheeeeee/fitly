@@ -66,7 +66,7 @@ def create_dash(server):
 def db_startup(app):
     athlete_exists = True if len(app.session.query(athlete).all()) > 0 else False
     # If no athlete created in db, create one
-if not athlete_exists:
+    if not athlete_exists:
         dummy_athlete = athlete(
             name='Will', 
             ride_ftp=300, 
@@ -76,8 +76,8 @@ if not athlete_exists:
             sex='M'
         )
 
-    db_refresh_record = True if len(app.session.query(dbRefreshStatus).all()) > 0 else False
-    # Insert initial system load refresh record
+        db_refresh_record = True if len(app.session.query(dbRefreshStatus).all()) > 0 else False
+        # Insert initial system load refresh record
     if not db_refresh_record:
         dummy_db_refresh_record = dbRefreshStatus(
             timestamp_utc=datetime.utcnow(),
