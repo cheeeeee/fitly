@@ -69,9 +69,10 @@ def db_startup(app):
     if not athlete_exists:
         dummy_athlete = athlete(
             name='Will', 
+            birthday=datetime(1987, 10, 28),
             ride_ftp=300, 
             run_ftp=300,
-            weight=170,
+            weight_lbs=170,
             resting_hr=50,
             sex='M'
         )
