@@ -62,22 +62,48 @@ def create_dash(server):
 
     return app
 
-
 def db_startup(app):
-    athlete_exists = True if len(app.session.query(athlete).all()) > 0 else False
-    # If no athlete created in db, create one
-    if not athlete_exists:
-        dummy_athlete = athlete(
-            name='Will', 
-            birthday=datetime(1987, 10, 28),
-            ride_ftp=300, 
-            run_ftp=300,
-            weight_lbs=170,
-            resting_hr=50,
-            sex='M'
-        )
+    # Fetch the first athlete record, if one exists
+    dummy_athlete = app.session.query(athlete).first()
+    
+    # If the database is completely empty, create the baseline athlete
+    if not dummy_athlete:
+        dummy_athlete = athlete(name='Will')
         app.session.add(dummy_athlete)
-        app.session.commit()
+    
+    # Forcefully populate the required dummy values if they are missing
+    if not dummy_athlete.birthday:
+        dummy_athlete.birthday = datetime(1987, 10, 28)
+    if not dummy_athlete.sex:
+        dummy_athlete.sex = 'M'
+    if dummy_athlete.weight_lbs is None:
+        dummy_athlete.weight_lbs = 170
+    if dummy_athlete.resting_hr is None:
+        dummy_athlete.resting_hr = 50
+    if dummy_athlete.run_ftp is None:
+        dummy_athlete.run_ftp = 300
+    if dummy_athlete.ride_ftp is None:
+        dummy_athlete.ride_ftp = 300
+        
+    # Commit all changes to the database
+    app.session.commit()
+
+    # ... move on to the dbRefreshStatus logic ...
+# def db_startup(app):
+#     athlete_exists = True if len(app.session.query(athlete).all()) > 0 else False
+#     # If no athlete created in db, create one
+#     if not athlete_exists:
+#         dummy_athlete = athlete(
+#             name='Will', 
+#             birthday=datetime(1987, 10, 28),
+#             ride_ftp=300, 
+#             run_ftp=300,
+#             weight_lbs=170,
+#             resting_hr=50,
+#             sex='M'
+#         )
+#         app.session.add(dummy_athlete)
+#         app.session.commit()
 
     # Check for refresh record AFTER the athlete commit
     db_refresh_record = True if len(app.session.query(dbRefreshStatus).all()) > 0 else False
