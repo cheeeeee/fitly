@@ -77,8 +77,8 @@ def db_startup(app):
             sex='M'
         )
 
-        db_refresh_record = True if len(app.session.query(dbRefreshStatus).all()) > 0 else False
-        # Insert initial system load refresh record
+    db_refresh_record = True if len(app.session.query(dbRefreshStatus).all()) > 0 else False
+    # Insert initial system load refresh record
     if not db_refresh_record:
         dummy_db_refresh_record = dbRefreshStatus(
             timestamp_utc=datetime.utcnow(),
