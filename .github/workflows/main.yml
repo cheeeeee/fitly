@@ -2,7 +2,8 @@ name: Build and Publish ARM64 Image
 
 on:
   push:
-    branches: [ "master", "main" ]
+    # The '**' wildcard triggers a build on EVERY branch
+    branches: [ "**" ]
   workflow_dispatch: 
   pull_request:
     branches:
@@ -11,7 +12,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Forces Node 24 to clear deprecation warnings
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
 
 jobs:
   build-and-push-image:
@@ -43,8 +44,13 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest
+            # Auto-generates a tag from the branch or PR name
+            type=ref,event=branch
+            type=ref,event=pr
+            # Keeps the SHA tag for exact rollbacks
             type=sha
+            # ONLY applies the 'latest' tag if this is the master/main branch
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
