@@ -25,13 +25,16 @@ def create_flask(config_object=f"{__package__}.settings"):
 
     return server
 
-# SQL w/ WAL
+# SQL w/ WAL - Optimized for Low-Memory Edge Devices
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
+    # 1. Enable Write-Ahead Logging for concurrent multi-threading
     cursor.execute("PRAGMA journal_mode=WAL")
+    # 2. Relax sync to prevent SD card I/O lockups
     cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA cache_size=-200000")
+    # 3. Cap the connection cache at 10MB to prevent OOM panics
+    cursor.execute("PRAGMA cache_size=-10000")
     cursor.close()
 
 def create_dash(server):
