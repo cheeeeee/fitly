@@ -75,7 +75,9 @@ def get_peloton_workout_summary_cache(act_start_date_utc):
 
 class FitlyActivity(stravalib.model.Activity):
 
-    def __new__(cls, activity):
+    def __new__(cls, activity=None, **kwargs):
+        if activity is None:
+            return super().__new__(cls)
         activity.__class__ = FitlyActivity
         return activity
 
