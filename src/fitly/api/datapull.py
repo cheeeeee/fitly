@@ -11,14 +11,17 @@ from ..api.fitlyAPI import *
 import pandas as pd
 from ..app import app
 from ..utils import config, withings_credentials_supplied, oura_credentials_supplied, nextcloud_credentials_supplied
+import multiprocessing
 
+
+def _scrape_activity(fitly_act, athlete_id):
+    fitly_act.stravaScrape(athlete_id=athlete_id)
 
 def latest_refresh():
     latest_date = app.session.query(func.max(dbRefreshStatus.timestamp_utc))[0][0]
 
     app.session.remove()
     return latest_date
-
 
 def refresh_database(refresh_method='system', truncate=False, truncateDate=None):
     run_time = datetime.utcnow()
@@ -199,8 +202,8 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
                                     app.server.logger.info('New Workout found: "{}"'.format(act.name))
                             # If new workouts found, analyze and insert
                             if len(new_activities) > 0:
-                                for fitly_act in new_activities:
-                                    fitly_act.stravaScrape(athlete_id=athlete_id)
+                                with multiprocessing.Pool() as pool:
+                                    pool.starmap(_scrape_activity, [(fitly_act, athlete_id) for fitly_act in new_activities])
                             # Only run hrv training workflow if oura connection available to use hrv data or readiness score
                             if oura_status == 'Successful':
                                 training_workflow(min_non_warmup_workout_time=min_non_warmup_workout_time,
