@@ -2,7 +2,7 @@ name: Build and Publish ARM64 Image
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [ "master", "main", "feature/multiprocess-datapull" ]
   workflow_dispatch: 
 
 env:
