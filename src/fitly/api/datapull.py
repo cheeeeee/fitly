@@ -14,7 +14,10 @@ from ..utils import config, withings_credentials_supplied, oura_credentials_supp
 import multiprocessing
 
 
-def _scrape_activity(fitly_act, athlete_id):
+def _scrape_activity(act_dict, athlete_id):
+    from stravalib.model import Activity
+    act = Activity(**act_dict)
+    fitly_act = FitlyActivity(act)
     fitly_act.stravaScrape(athlete_id=athlete_id)
 
 def latest_refresh():
@@ -198,12 +201,12 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
                             for act in activities:
                                 # If not already in db, parse and insert
                                 if act.id not in db_activities['activity_id'].unique():
-                                    new_activities.append(FitlyActivity(act))
+                                    new_activities.append(act)
                                     app.server.logger.info('New Workout found: "{}"'.format(act.name))
                             # If new workouts found, analyze and insert
                             if len(new_activities) > 0:
                                 with multiprocessing.Pool(initializer=engine.dispose) as pool:
-                                    pool.starmap(_scrape_activity, [(fitly_act, athlete_id) for fitly_act in new_activities])
+                                    pool.starmap(_scrape_activity, [(act.to_dict(), athlete_id) for act in new_activities])
                             # Only run hrv training workflow if oura connection available to use hrv data or readiness score
                             if oura_status == 'Successful':
                                 training_workflow(min_non_warmup_workout_time=min_non_warmup_workout_time,

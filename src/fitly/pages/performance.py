@@ -1009,6 +1009,8 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
         sql=app.session.query(stravaSummary).filter(
             stravaSummary.type.like(sport), stravaSummary.elapsed_time > app.session.query(athlete).filter(
                 athlete.athlete_id == 1).first().min_non_warmup_workout_time).statement, con=engine)
+    if len(df) == 0:
+        return {'data': [], 'layout': go.Layout(title='No Data Found')}
     if intensity != 'all':
         df = df[df['workout_intensity'] == intensity]
 
@@ -1831,6 +1833,9 @@ def create_yoy_chart(metric, sport='all'):
                 #     extract('year', stravaSummary.start_date_utc) == (datetime.utcnow().year - 1))
             ).statement, con=engine, index_col='start_date_utc').sort_index(ascending=True)
 
+    if len(df) == 0:
+        return {'data': [], 'layout': go.Layout(title='No Data Found')}, None
+
     app.session.remove()
 
     df['year'] = df.index.year
@@ -1974,6 +1979,9 @@ def get_workout_types(df_summary, run_status, ride_status, all_status):
 def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_status, atl_status):
     df_summary = pd.read_sql(sql=app.session.query(stravaSummary).statement, con=engine,
                              index_col='start_date_local').sort_index(ascending=True)
+                             
+    if len(df_summary) == 0:
+        return {'data': [], 'layout': go.Layout(title='No Data Found')}
 
     athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
     rr_max_threshold = athlete_info.rr_max_goal
@@ -2770,6 +2778,9 @@ def workout_distribution(sport='Ride', days=90, intensity='all'):
                 stravaSummary.high_intensity_seconds > 0)
         ).statement,
         con=engine, index_col='start_date_utc')
+        
+    if len(df_summary) == 0:
+        return []
 
     if intensity != 'all':
         df_summary = df_summary[df_summary['workout_intensity'] == intensity]
