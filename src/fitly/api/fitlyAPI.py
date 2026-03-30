@@ -140,7 +140,7 @@ class FitlyActivity(stravalib.model.Activity):
             3: float(self.Athlete.hr_zone_threshold_3),
             4: float(self.Athlete.hr_zone_threshold_4)
         }
-        if 'ride' in self.type.lower():
+        if self.type and 'ride' in self.type.lower():
             self.power_zones = {
                 1: float(self.Athlete.cycle_power_zone_threshold_1),
                 2: float(self.Athlete.cycle_power_zone_threshold_2),
@@ -149,7 +149,7 @@ class FitlyActivity(stravalib.model.Activity):
                 5: float(self.Athlete.cycle_power_zone_threshold_5),
                 6: float(self.Athlete.cycle_power_zone_threshold_6)
             }
-        elif 'run' in self.type.lower() or 'walk' in self.type.lower():
+        elif self.type and ('run' in self.type.lower() or 'walk' in self.type.lower()):
             self.power_zones = {
                 1: float(self.Athlete.run_power_zone_threshold_1),
                 2: float(self.Athlete.run_power_zone_threshold_2),
@@ -226,7 +226,7 @@ class FitlyActivity(stravalib.model.Activity):
     def get_ftp(
             self):  # TODO: Update with auto calculated critical power so users do not have to flag (or take) FTP tests
         self.stryd_metrics = []
-        if 'run' in self.type.lower() or 'walk' in self.type.lower():
+        if self.type and ('run' in self.type.lower() or 'walk' in self.type.lower()):
             # If stryd credentials in config, grab ftp
             if stryd_credentials_supplied:
                 stryd_df = pd.read_sql(
@@ -256,7 +256,7 @@ class FitlyActivity(stravalib.model.Activity):
                     self.ftp = self.Athlete.run_ftp
             else:
                 self.ftp = self.Athlete.run_ftp
-        elif 'ride' in self.type.lower():
+        elif self.type and 'ride' in self.type.lower():
             # TODO: Switch over to using Critical Power for everything once we get the critical power model working
 
             try:
@@ -392,7 +392,7 @@ class FitlyActivity(stravalib.model.Activity):
 
         trimp_weighting_factor = 1.92 if str(self.Athlete.birthday).upper() == 'M' else 1.67
         # Calculate power metrics
-        if 'weighttraining' in self.type.lower():
+        if self.type and 'weighttraining' in self.type.lower():
             self.tss, self.ri = self.wss_score()
 
         elif self.max_watts is not None and self.ftp is not None:
@@ -558,9 +558,9 @@ class FitlyActivity(stravalib.model.Activity):
     # Continue
         if self.max_watts is not None:
             if self.ftp is not None:
-                if 'ride' in self.type.lower():
+                if self.type and 'ride' in self.type.lower():
                     pz_5, pz_6 = self.power_zones[5], self.power_zones[6]
-                elif 'run' in self.type.lower() or 'walk' in self.type.lower():
+                elif self.type and ('run' in self.type.lower() or 'walk' in self.type.lower()):
                     pz_5, pz_6 = 99, 99
                 self.df_samples['power_zone'] = np.nan
 
@@ -635,14 +635,14 @@ class FitlyActivity(stravalib.model.Activity):
             # Check if power or heartrate data
             if metric == 'power':
                 # If power data, check if run zones or ride zones should be used
-                if 'run' in self.type.lower() or 'walk' in self.type.lower():
+                if self.type and ('run' in self.type.lower() or 'walk' in self.type.lower()):
                     df_zone_intensities.at[i, 'intensity'] = 'low' if df_zone_intensities.at[
                                                                           i, 'power_zone'] in [1,
                                                                                                2] else 'med' if \
                         df_zone_intensities.at[i, 'power_zone'] == 3 else 'high' if \
                         df_zone_intensities.at[
                             i, 'power_zone'] in [4, 5] else None
-                elif 'ride' in self.type.lower():
+                elif self.type and 'ride' in self.type.lower():
                     df_zone_intensities.at[i, 'intensity'] = 'low' if df_zone_intensities.at[
                                                                           i, 'power_zone'] in [1, 2,
                                                                                                3] else 'med' if \
