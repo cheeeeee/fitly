@@ -1228,7 +1228,7 @@ def update_tokens(n_clicks, search):
                                                                         client_secret=config.get('strava',
                                                                                                  'client_secret'),
                                                                         code=parse_qs(query_params.query)['code'][0])
-        save_strava_token(token_response)
+            save_strava_token(token_response)
 
     if 'withings' in search:
         query_params = urlparse.urlparse(search.replace('withings&', ''))
