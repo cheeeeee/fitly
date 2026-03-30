@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 import numpy as np
 from ..api.sqlalchemy_declarative import ouraSleepSummary, ouraReadinessSummary, withings, athlete, stravaSummary, \
-    strydSummary, fitbod, workoutStepLog, dbRefreshStatus
-from sqlalchemy import func, cast, Date
+    stravaSamples, stravaBestSamples, strydSummary, fitbod, workoutStepLog, dbRefreshStatus
+from sqlalchemy import func, cast, Date, delete
 from sweat.io.models.dataframes import WorkoutDataFrame, Athlete
 from sweat.pdm import critical_power
 from sweat.metrics.core import weighted_average_power
@@ -698,6 +698,11 @@ class FitlyActivity(stravalib.model.Activity):
                 df['athlete_id'] = self.Athlete.athlete_id
                 df['ftp'] = self.ftp
                 df.set_index(['activity_id', 'interval'], inplace=True)
+                # Delete any existing rows for this activity to prevent UNIQUE constraint
+                # violations on re-runs (e.g. if a previous run partially completed)
+                app.session.execute(delete(stravaBestSamples).where(stravaBestSamples.activity_id == int(self.id)))
+                app.session.commit()
+                app.session.remove()
                 df.to_sql('strava_best_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
 
     def sweatpy_cp_model(self, model='3_parameter_non_linear'):
@@ -721,6 +726,12 @@ class FitlyActivity(stravalib.model.Activity):
         self.df_samples['type'] = self.type
         self.df_samples['athlete_id'] = self.Athlete.athlete_id
 
+        # Delete any existing rows for this activity to prevent UNIQUE constraint
+        # violations on re-runs (e.g. if a previous run partially completed)
+        app.session.execute(delete(stravaSummary).where(stravaSummary.activity_id == int(self.id)))
+        app.session.execute(delete(stravaSamples).where(stravaSamples.activity_id == int(self.id)))
+        app.session.commit()
+        app.session.remove()
         self.df_summary.fillna(np.nan).to_sql('strava_summary', engine, if_exists='append', index=True, method='multi', chunksize=1000)
         self.df_samples.fillna(np.nan).to_sql('strava_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
 
