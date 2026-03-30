@@ -22,9 +22,18 @@ if web_concurrency_str:
 else:
     web_concurrency = int(default_web_concurrency)
 
+import configparser
+config = configparser.ConfigParser()
+config.read('./config/config.ini')
+
 # Gunicorn config variables
 loglevel = use_loglevel
-workers = web_concurrency
+
+try:
+    workers = int(config.get('settings', 'gunicorn_workers'))
+except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
+    workers = 3 # web_concurrency
+    
 bind = use_bind
 keepalive = 120
 errorlog = "-"
