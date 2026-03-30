@@ -32,7 +32,7 @@ loglevel = use_loglevel
 try:
     workers = int(config.get('settings', 'gunicorn_workers'))
 except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
-    workers = "3" # web_concurrency
+#    workers = "3" # web_concurrency
     
 bind = use_bind
 keepalive = 120
