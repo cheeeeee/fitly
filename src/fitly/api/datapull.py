@@ -202,7 +202,7 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
                                     app.server.logger.info('New Workout found: "{}"'.format(act.name))
                             # If new workouts found, analyze and insert
                             if len(new_activities) > 0:
-                                with multiprocessing.Pool() as pool:
+                                with multiprocessing.Pool(initializer=engine.dispose) as pool:
                                     pool.starmap(_scrape_activity, [(fitly_act, athlete_id) for fitly_act in new_activities])
                             # Only run hrv training workflow if oura connection available to use hrv data or readiness score
                             if oura_status == 'Successful':
