@@ -28,14 +28,30 @@ def create_flask(config_object=f"{__package__}.settings"):
 # SQL w/ WAL
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
+    import time
+    import logging
+    logger = logging.getLogger(__name__)
     # Temporarily disable sqlite3 implicit transactions to run WAL PRAGMA on an empty DB
     isolation_level = dbapi_connection.isolation_level
     dbapi_connection.isolation_level = None
     
     cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA cache_size=-200000")
+    # Set busy timeout first so subsequent PRAGMAs wait instead of failing immediately
+    cursor.execute("PRAGMA busy_timeout=30000")
+    for attempt in range(3):
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            result = cursor.fetchone()
+            if result and result[0].lower() != 'wal':
+                logger.warning(f"Failed to set WAL mode, got: {result[0]}")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA cache_size=-200000")
+            break
+        except Exception:
+            if attempt < 2:
+                time.sleep(0.5)
+            else:
+                raise
     cursor.close()
     
     # Restore standard SQLAlchemy transaction management

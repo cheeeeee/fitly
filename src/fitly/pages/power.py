@@ -352,6 +352,11 @@ def power_curve(activity_type='ride', power_unit='mmp', last_id=None, height=400
         func.max(stravaBestSamples.interval).label('interval')).filter(
         stravaBestSamples.type.ilike(activity_type)).first()[0]
 
+    # If no best samples exist for this activity type, return empty chart
+    if max_interval is None:
+        app.session.remove()
+        return {}
+
     act_dict = pd.read_sql(
         sql=app.session.query(stravaBestSamples.activity_id, stravaBestSamples.act_name).distinct().statement,
         con=engine,

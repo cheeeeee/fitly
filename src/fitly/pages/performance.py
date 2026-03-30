@@ -1862,6 +1862,7 @@ def create_yoy_chart(metric, sport='all'):
 
     # Plot latest line first for most recent 10 years
     index, current_date, cy_metric, ly_metric, target = 0, None, None, None, None
+    cy, ly = None, None
     for year in list(df.columns)[9:-12:-1]:
         if metric in ['elapsed_time', 'high_intensity_seconds', 'low_intensity_seconds', 'mod_intensity_seconds']:
             text = ['{}: <b>{}'.format(str(year), timedelta(seconds=x)) for x in df[year].cumsum().fillna(0)]
@@ -1919,11 +1920,10 @@ def create_yoy_chart(metric, sport='all'):
     #     )
     # )
 
-    hoverData = dict(points=[
-        {'x': current_date, 'y': cy_metric, 'customdata': f'cy|{metric}|{cy}'},
-        {'x': current_date, 'y': ly_metric, 'customdata': f'ly|{metric}|{ly}'},
-        # {'x': current_date, 'y': target, 'customdata': 'target'}
-    ])
+    hover_points = [{'x': current_date, 'y': cy_metric, 'customdata': f'cy|{metric}|{cy}'}]
+    if ly is not None:
+        hover_points.append({'x': current_date, 'y': ly_metric, 'customdata': f'ly|{metric}|{ly}'})
+    hoverData = dict(points=hover_points)
 
     figure = {
         'data': data,
