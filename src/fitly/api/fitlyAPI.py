@@ -736,10 +736,12 @@ class FitlyActivity(stravalib.model.Activity):
                 def _write_best_samples():
                     # Delete any existing rows for this activity to prevent UNIQUE constraint
                     # violations on re-runs (e.g. if a previous run partially completed)
+                    app.server.logger.debug('Activity id "{}": Acquiring DB lock for strava_best_samples ({} rows)'.format(self.id, len(df)))
                     app.session.execute(delete(stravaBestSamples).where(stravaBestSamples.activity_id == int(self.id)))
                     app.session.commit()
                     app.session.remove()
                     df.to_sql('strava_best_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+                    app.server.logger.debug('Activity id "{}": ✓ strava_best_samples written ({} rows)'.format(self.id, len(df)))
 
                 _retry_db_write(_write_best_samples)
 
@@ -767,12 +769,15 @@ class FitlyActivity(stravalib.model.Activity):
         def _write_summary_and_samples():
             # Delete any existing rows for this activity to prevent UNIQUE constraint
             # violations on re-runs (e.g. if a previous run partially completed)
+            app.server.logger.debug('Activity id "{}": Acquiring DB lock for strava_summary + strava_samples ({} sample rows)'.format(self.id, len(self.df_samples)))
             app.session.execute(delete(stravaSummary).where(stravaSummary.activity_id == int(self.id)))
             app.session.execute(delete(stravaSamples).where(stravaSamples.activity_id == int(self.id)))
             app.session.commit()
             app.session.remove()
             self.df_summary.fillna(np.nan).to_sql('strava_summary', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+            app.server.logger.debug('Activity id "{}": ✓ strava_summary written'.format(self.id))
             self.df_samples.fillna(np.nan).to_sql('strava_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+            app.server.logger.debug('Activity id "{}": ✓ strava_samples written ({} rows)'.format(self.id, len(self.df_samples)))
 
         _retry_db_write(_write_summary_and_samples)
 
