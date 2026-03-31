@@ -8,17 +8,32 @@ from ..api.sqlalchemy_declarative import *
 from sqlalchemy import func, delete
 import datetime
 from ..api.fitlyAPI import *
+from ..api import fitlyAPI as _fitlyAPI_module
 import pandas as pd
 from ..app import app
 from ..utils import config, withings_credentials_supplied, oura_credentials_supplied, nextcloud_credentials_supplied
+import multiprocessing
+import os
 
+
+def _pool_init(lock):
+    """Initialize each worker process: set the shared DB write lock and
+    dispose the inherited engine so each worker creates its own connections."""
+    _fitlyAPI_module._db_write_lock = lock
+    engine.dispose()
+
+
+def _scrape_activity(act_dict, athlete_id):
+    from stravalib.model import Activity
+    act = Activity(**act_dict)
+    fitly_act = FitlyActivity(act)
+    fitly_act.stravaScrape(athlete_id=athlete_id)
 
 def latest_refresh():
     latest_date = app.session.query(func.max(dbRefreshStatus.timestamp_utc))[0][0]
 
     app.session.remove()
     return latest_date
-
 
 def refresh_database(refresh_method='system', truncate=False, truncateDate=None):
     run_time = datetime.utcnow()
@@ -183,24 +198,46 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
 
                             athlete_info = app.session.query(athlete).filter(athlete.athlete_id == athlete_id).first()
                             min_non_warmup_workout_time = athlete_info.min_non_warmup_workout_time
-                            # Loop through the activities, and create a dict of the dataframe stream data of each activity
-                            db_activities = pd.read_sql(
+                            # Check both summary and samples tables to detect incomplete imports
+                            # (e.g. summary written but samples failed due to crash/DB lock)
+                            db_summary_ids = set(pd.read_sql(
                                 sql=app.session.query(stravaSummary.activity_id).filter(
                                     stravaSummary.athlete_id == athlete_id).distinct(
                                     stravaSummary.activity_id).statement,
-                                con=engine)
+                                con=engine)['activity_id'].unique())
+
+                            db_samples_ids = set(pd.read_sql(
+                                sql=app.session.query(stravaSamples.activity_id).filter(
+                                    stravaSamples.athlete_id == athlete_id).distinct(
+                                    stravaSamples.activity_id).statement,
+                                con=engine)['activity_id'].unique())
+
+                            # Activity is only "complete" if it exists in BOTH tables
+                            complete_activities = db_summary_ids & db_samples_ids
 
                             app.session.remove()
                             new_activities = []
                             for act in activities:
-                                # If not already in db, parse and insert
-                                if act.id not in db_activities['activity_id'].unique():
-                                    new_activities.append(FitlyActivity(act))
-                                    app.server.logger.info('New Workout found: "{}"'.format(act.name))
+                                if act.id not in complete_activities:
+                                    if act.id in db_summary_ids or act.id in db_samples_ids:
+                                        app.server.logger.info('Incomplete activity found, re-processing: "{}"'.format(act.name))
+                                    else:
+                                        app.server.logger.info('New Workout found: "{}"'.format(act.name))
+                                    new_activities.append(act)
                             # If new workouts found, analyze and insert
                             if len(new_activities) > 0:
-                                for fitly_act in new_activities:
-                                    fitly_act.stravaScrape(athlete_id=athlete_id)
+                                # Shared lock ensures only one worker writes to SQLite at a time
+                                db_lock = multiprocessing.Lock()
+                                # Limit to 2 workers: leaves CPU headroom for OS + web app
+                                # maxtasksperchild=1: each worker exits after 1 activity, freeing memory
+                                pool_size = max(1, (os.cpu_count() or 2) // 2)
+                                with multiprocessing.Pool(
+                                    processes=pool_size,
+                                    initializer=_pool_init,
+                                    initargs=(db_lock,),
+                                    maxtasksperchild=1,
+                                ) as pool:
+                                    pool.starmap(_scrape_activity, [(act.to_dict(), athlete_id) for act in new_activities])
                             # Only run hrv training workflow if oura connection available to use hrv data or readiness score
                             if oura_status == 'Successful':
                                 training_workflow(min_non_warmup_workout_time=min_non_warmup_workout_time,

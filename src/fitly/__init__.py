@@ -28,6 +28,13 @@ def create_flask(config_object=f"{__package__}.settings"):
 # SQL w/ WAL - Optimized for Low-Memory Edge Devices
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
+    import time
+    import logging
+    logger = logging.getLogger(__name__)
+    # Temporarily disable sqlite3 implicit transactions to run WAL PRAGMA on an empty DB
+    isolation_level = dbapi_connection.isolation_level
+    dbapi_connection.isolation_level = None
+    
     cursor = dbapi_connection.cursor()
     # 1. Enable Write-Ahead Logging for concurrent multi-threading
     cursor.execute("PRAGMA journal_mode=WAL")
@@ -36,6 +43,9 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     # 3. Cap the connection cache at 10MB to prevent OOM panics
     cursor.execute("PRAGMA cache_size=-10000")
     cursor.close()
+    
+    # Restore standard SQLAlchemy transaction management
+    dbapi_connection.isolation_level = isolation_level
 
 def create_dash(server):
     Base.metadata.create_all(bind=engine)

@@ -1009,6 +1009,8 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
         sql=app.session.query(stravaSummary).filter(
             stravaSummary.type.like(sport), stravaSummary.elapsed_time > app.session.query(athlete).filter(
                 athlete.athlete_id == 1).first().min_non_warmup_workout_time).statement, con=engine)
+    if len(df) == 0:
+        return {'data': [], 'layout': go.Layout(title='No Data Found')}
     if intensity != 'all':
         df = df[df['workout_intensity'] == intensity]
 
@@ -1831,6 +1833,9 @@ def create_yoy_chart(metric, sport='all'):
                 #     extract('year', stravaSummary.start_date_utc) == (datetime.utcnow().year - 1))
             ).statement, con=engine, index_col='start_date_utc').sort_index(ascending=True)
 
+    if len(df) == 0:
+        return {'data': [], 'layout': go.Layout(title='No Data Found')}, None
+
     app.session.remove()
 
     df['year'] = df.index.year
@@ -1857,6 +1862,7 @@ def create_yoy_chart(metric, sport='all'):
 
     # Plot latest line first for most recent 10 years
     index, current_date, cy_metric, ly_metric, target = 0, None, None, None, None
+    cy, ly = None, None
     for year in list(df.columns)[9:-12:-1]:
         if metric in ['elapsed_time', 'high_intensity_seconds', 'low_intensity_seconds', 'mod_intensity_seconds']:
             text = ['{}: <b>{}'.format(str(year), timedelta(seconds=x)) for x in df[year].cumsum().fillna(0)]
@@ -1914,11 +1920,10 @@ def create_yoy_chart(metric, sport='all'):
     #     )
     # )
 
-    hoverData = dict(points=[
-        {'x': current_date, 'y': cy_metric, 'customdata': f'cy|{metric}|{cy}'},
-        {'x': current_date, 'y': ly_metric, 'customdata': f'ly|{metric}|{ly}'},
-        # {'x': current_date, 'y': target, 'customdata': 'target'}
-    ])
+    hover_points = [{'x': current_date, 'y': cy_metric, 'customdata': f'cy|{metric}|{cy}'}]
+    if ly is not None:
+        hover_points.append({'x': current_date, 'y': ly_metric, 'customdata': f'ly|{metric}|{ly}'})
+    hoverData = dict(points=hover_points)
 
     figure = {
         'data': data,
@@ -1974,6 +1979,9 @@ def get_workout_types(df_summary, run_status, ride_status, all_status):
 def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_status, atl_status):
     df_summary = pd.read_sql(sql=app.session.query(stravaSummary).statement, con=engine,
                              index_col='start_date_local').sort_index(ascending=True)
+                             
+    if len(df_summary) == 0:
+        return {'data': [], 'layout': go.Layout(title='No Data Found')}
 
     athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
     rr_max_threshold = athlete_info.rr_max_goal
@@ -2001,7 +2009,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
 
     df_annotations = pd.read_sql(
         sql=app.session.query(annotations.athlete_id, annotations.date, annotations.annotation).filter(
-            athlete.athlete_id == 1).statement,
+            annotations.athlete_id == 1).statement,
         con=engine,
         index_col='date').sort_index(ascending=False)
 
@@ -2770,6 +2778,9 @@ def workout_distribution(sport='Ride', days=90, intensity='all'):
                 stravaSummary.high_intensity_seconds > 0)
         ).statement,
         con=engine, index_col='start_date_utc')
+        
+    if len(df_summary) == 0:
+        return []
 
     if intensity != 'all':
         df_summary = df_summary[df_summary['workout_intensity'] == intensity]
@@ -3150,7 +3161,7 @@ def calculate_splits(df_samples):
 def create_annotation_table():
     df_annotations = pd.read_sql(
         sql=app.session.query(annotations.athlete_id, annotations.date, annotations.annotation).filter(
-            athlete.athlete_id == 1).statement,
+            annotations.athlete_id == 1).statement,
         con=engine).sort_index(ascending=False)
 
     app.session.remove()
@@ -3249,12 +3260,23 @@ def update_fitness_kpis(hoverData):
 )
 def refresh_fitness_chart(ride_switch, run_switch, all_switch, power_switch, hr_switch, atl_pmc_switch, ride_status,
                           run_status, all_status, power_status, hr_status, atl_status):
+    import time as _time
     pmc_switch_settings = {'ride_status': ride_status, 'run_status': run_status, 'all_status': all_status,
                            'power_status': power_status, 'hr_status': hr_status, 'atl_status': atl_status}
     ### Save Switch settings in DB ###
-    app.session.query(athlete).filter(athlete.athlete_id == 1).update(
-        {athlete.pmc_switch_settings: json.dumps(pmc_switch_settings)})
-    app.session.commit()
+    for attempt in range(5):
+        try:
+            app.session.query(athlete).filter(athlete.athlete_id == 1).update(
+                {athlete.pmc_switch_settings: json.dumps(pmc_switch_settings)})
+            app.session.commit()
+            break
+        except Exception as e:
+            app.session.rollback()
+            if 'database is locked' in str(e) and attempt < 4:
+                _time.sleep(0.5 * (2 ** attempt))
+            else:
+                app.server.logger.error(f'Failed to save PMC switch settings: {e}')
+                break
     app.session.remove()
 
     pmc_figure, hoverData = create_fitness_chart(ride_status=ride_status, run_status=run_status,

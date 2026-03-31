@@ -30,13 +30,22 @@ import threading
 import queue
 import pickle
 
-client_id = config.get('spotify', 'client_id')
-client_secret = config.get('spotify', 'client_secret')
-redirect_uri = config.get('spotify', 'redirect_uri')
-min_secs_listened = int(config.get('spotify', 'min_secs_listened'))
-skip_min_threshold = float(config.get('spotify', 'skip_min_threshold'))
-skip_max_threshold = float(config.get('spotify', 'skip_max_threshold'))
-poll_interval_seconds = float(config.get('spotify', 'poll_interval_seconds'))
+try:
+    client_id = config.get('spotify', 'client_id')
+    client_secret = config.get('spotify', 'client_secret')
+    redirect_uri = config.get('spotify', 'redirect_uri')
+    min_secs_listened = int(config.get('spotify', 'min_secs_listened'))
+    skip_min_threshold = float(config.get('spotify', 'skip_min_threshold'))
+    skip_max_threshold = float(config.get('spotify', 'skip_max_threshold'))
+    poll_interval_seconds = float(config.get('spotify', 'poll_interval_seconds'))
+except Exception:
+    client_id = ''
+    client_secret = ''
+    redirect_uri = ''
+    min_secs_listened = 30
+    skip_min_threshold = 0.05
+    skip_max_threshold = 0.80
+    poll_interval_seconds = 1.0
 
 # Main queue that stream will add playback feeds to
 q = queue.Queue(maxsize=0)
@@ -48,8 +57,11 @@ playback_feed = []
 # Retrieve current tokens from db
 def current_token_dict():
     try:
-        token_dict = app.session.query(apiTokens.tokens).filter(apiTokens.service == 'Spotify').first().tokens
-        token_pickle = pickle.loads(token_dict)
+        result = app.session.query(apiTokens.tokens).filter(apiTokens.service == 'Spotify').first()
+        if result is None or result.tokens is None:
+            app.session.remove()
+            return {}
+        token_pickle = pickle.loads(result.tokens)
         app.session.remove()
     except BaseException as e:
         app.server.logger.error(e)
