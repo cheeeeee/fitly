@@ -3260,12 +3260,23 @@ def update_fitness_kpis(hoverData):
 )
 def refresh_fitness_chart(ride_switch, run_switch, all_switch, power_switch, hr_switch, atl_pmc_switch, ride_status,
                           run_status, all_status, power_status, hr_status, atl_status):
+    import time as _time
     pmc_switch_settings = {'ride_status': ride_status, 'run_status': run_status, 'all_status': all_status,
                            'power_status': power_status, 'hr_status': hr_status, 'atl_status': atl_status}
     ### Save Switch settings in DB ###
-    app.session.query(athlete).filter(athlete.athlete_id == 1).update(
-        {athlete.pmc_switch_settings: json.dumps(pmc_switch_settings)})
-    app.session.commit()
+    for attempt in range(5):
+        try:
+            app.session.query(athlete).filter(athlete.athlete_id == 1).update(
+                {athlete.pmc_switch_settings: json.dumps(pmc_switch_settings)})
+            app.session.commit()
+            break
+        except Exception as e:
+            app.session.rollback()
+            if 'database is locked' in str(e) and attempt < 4:
+                _time.sleep(0.5 * (2 ** attempt))
+            else:
+                app.server.logger.error(f'Failed to save PMC switch settings: {e}')
+                break
     app.session.remove()
 
     pmc_figure, hoverData = create_fitness_chart(ride_status=ride_status, run_status=run_status,
