@@ -27,22 +27,35 @@ logger = logging.getLogger(__name__)
 types = ['time', 'latlng', 'distance', 'altitude', 'velocity_smooth', 'heartrate', 'cadence', 'watts', 'temp',
          'moving', 'grade_smooth']
 
+# Global lock shared across multiprocessing workers to serialize DB writes.
+# Set by _pool_init when a worker process starts.
+_db_write_lock = None
+
 
 def _retry_db_write(func, max_retries=5, base_delay=1.0):
     """Retry a database write operation with exponential backoff.
-    SQLite only allows one writer at a time; when multiple multiprocessing
-    workers write concurrently, some will get 'database is locked'. This
-    retries with increasing delays until the lock clears."""
-    for attempt in range(max_retries):
-        try:
-            return func()
-        except Exception as e:
-            if 'database is locked' in str(e) and attempt < max_retries - 1:
-                delay = base_delay * (2 ** attempt)  # 1, 2, 4, 8, 16 seconds
-                logger.warning(f'Database locked, retrying in {delay}s (attempt {attempt + 1}/{max_retries})')
-                time.sleep(delay)
-            else:
-                raise
+    Acquires the shared multiprocessing lock (if available) so only one
+    process writes to SQLite at a time, preventing lock contention."""
+    global _db_write_lock
+
+    def _attempt():
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except Exception as e:
+                if 'database is locked' in str(e) and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f'Database locked, retrying in {delay}s (attempt {attempt + 1}/{max_retries})')
+                    time.sleep(delay)
+                else:
+                    raise
+
+    # If a shared lock exists, hold it for the entire write operation
+    if _db_write_lock is not None:
+        with _db_write_lock:
+            return _attempt()
+    else:
+        return _attempt()
 
 
 def db_process_flag(flag):

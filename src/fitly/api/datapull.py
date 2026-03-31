@@ -12,6 +12,15 @@ import pandas as pd
 from ..app import app
 from ..utils import config, withings_credentials_supplied, oura_credentials_supplied, nextcloud_credentials_supplied
 import multiprocessing
+import os
+
+
+def _pool_init(lock):
+    """Initialize each worker process: set the shared DB write lock and
+    dispose the inherited engine so each worker creates its own connections."""
+    import fitly.api.fitlyAPI as _api
+    _api._db_write_lock = lock
+    engine.dispose()
 
 
 def _scrape_activity(act_dict, athlete_id):
@@ -217,7 +226,17 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
                                     new_activities.append(act)
                             # If new workouts found, analyze and insert
                             if len(new_activities) > 0:
-                                with multiprocessing.Pool(initializer=engine.dispose) as pool:
+                                # Shared lock ensures only one worker writes to SQLite at a time
+                                db_lock = multiprocessing.Lock()
+                                # Limit to 2 workers: leaves CPU headroom for OS + web app
+                                # maxtasksperchild=1: each worker exits after 1 activity, freeing memory
+                                pool_size = max(1, (os.cpu_count() or 2) // 2)
+                                with multiprocessing.Pool(
+                                    processes=pool_size,
+                                    initializer=_pool_init,
+                                    initargs=(db_lock,),
+                                    maxtasksperchild=1,
+                                ) as pool:
                                     pool.starmap(_scrape_activity, [(act.to_dict(), athlete_id) for act in new_activities])
                             # Only run hrv training workflow if oura connection available to use hrv data or readiness score
                             if oura_status == 'Successful':
