@@ -17,11 +17,32 @@ from ..app import app
 from .database import engine
 from ..utils import peloton_credentials_supplied, stryd_credentials_supplied, config
 import os
+import time
+import logging
 import pandas as pd
 from ..pages.performance import get_hrv_df, readiness_score_recommendation
 
+logger = logging.getLogger(__name__)
+
 types = ['time', 'latlng', 'distance', 'altitude', 'velocity_smooth', 'heartrate', 'cadence', 'watts', 'temp',
          'moving', 'grade_smooth']
+
+
+def _retry_db_write(func, max_retries=5, base_delay=1.0):
+    """Retry a database write operation with exponential backoff.
+    SQLite only allows one writer at a time; when multiple multiprocessing
+    workers write concurrently, some will get 'database is locked'. This
+    retries with increasing delays until the lock clears."""
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            if 'database is locked' in str(e) and attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)  # 1, 2, 4, 8, 16 seconds
+                logger.warning(f'Database locked, retrying in {delay}s (attempt {attempt + 1}/{max_retries})')
+                time.sleep(delay)
+            else:
+                raise
 
 
 def db_process_flag(flag):
@@ -698,12 +719,16 @@ class FitlyActivity(stravalib.model.Activity):
                 df['athlete_id'] = self.Athlete.athlete_id
                 df['ftp'] = self.ftp
                 df.set_index(['activity_id', 'interval'], inplace=True)
-                # Delete any existing rows for this activity to prevent UNIQUE constraint
-                # violations on re-runs (e.g. if a previous run partially completed)
-                app.session.execute(delete(stravaBestSamples).where(stravaBestSamples.activity_id == int(self.id)))
-                app.session.commit()
-                app.session.remove()
-                df.to_sql('strava_best_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+
+                def _write_best_samples():
+                    # Delete any existing rows for this activity to prevent UNIQUE constraint
+                    # violations on re-runs (e.g. if a previous run partially completed)
+                    app.session.execute(delete(stravaBestSamples).where(stravaBestSamples.activity_id == int(self.id)))
+                    app.session.commit()
+                    app.session.remove()
+                    df.to_sql('strava_best_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+
+                _retry_db_write(_write_best_samples)
 
     def sweatpy_cp_model(self, model='3_parameter_non_linear'):
         # Models that can be passed = '2_parameter_non_linear', '3_parameter_non_linear', 'extended_5_3','extended_7_3'
@@ -726,14 +751,17 @@ class FitlyActivity(stravalib.model.Activity):
         self.df_samples['type'] = self.type
         self.df_samples['athlete_id'] = self.Athlete.athlete_id
 
-        # Delete any existing rows for this activity to prevent UNIQUE constraint
-        # violations on re-runs (e.g. if a previous run partially completed)
-        app.session.execute(delete(stravaSummary).where(stravaSummary.activity_id == int(self.id)))
-        app.session.execute(delete(stravaSamples).where(stravaSamples.activity_id == int(self.id)))
-        app.session.commit()
-        app.session.remove()
-        self.df_summary.fillna(np.nan).to_sql('strava_summary', engine, if_exists='append', index=True, method='multi', chunksize=1000)
-        self.df_samples.fillna(np.nan).to_sql('strava_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+        def _write_summary_and_samples():
+            # Delete any existing rows for this activity to prevent UNIQUE constraint
+            # violations on re-runs (e.g. if a previous run partially completed)
+            app.session.execute(delete(stravaSummary).where(stravaSummary.activity_id == int(self.id)))
+            app.session.execute(delete(stravaSamples).where(stravaSamples.activity_id == int(self.id)))
+            app.session.commit()
+            app.session.remove()
+            self.df_summary.fillna(np.nan).to_sql('strava_summary', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+            self.df_samples.fillna(np.nan).to_sql('strava_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+
+        _retry_db_write(_write_summary_and_samples)
 
 
 def training_workflow(min_non_warmup_workout_time, metric='hrv_baseline', athlete_id=1):
