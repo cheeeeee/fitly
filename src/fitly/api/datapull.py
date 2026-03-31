@@ -189,20 +189,32 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
 
                             athlete_info = app.session.query(athlete).filter(athlete.athlete_id == athlete_id).first()
                             min_non_warmup_workout_time = athlete_info.min_non_warmup_workout_time
-                            # Loop through the activities, and create a dict of the dataframe stream data of each activity
-                            db_activities = pd.read_sql(
+                            # Check both summary and samples tables to detect incomplete imports
+                            # (e.g. summary written but samples failed due to crash/DB lock)
+                            db_summary_ids = set(pd.read_sql(
                                 sql=app.session.query(stravaSummary.activity_id).filter(
                                     stravaSummary.athlete_id == athlete_id).distinct(
                                     stravaSummary.activity_id).statement,
-                                con=engine)
+                                con=engine)['activity_id'].unique())
+
+                            db_samples_ids = set(pd.read_sql(
+                                sql=app.session.query(stravaSamples.activity_id).filter(
+                                    stravaSamples.athlete_id == athlete_id).distinct(
+                                    stravaSamples.activity_id).statement,
+                                con=engine)['activity_id'].unique())
+
+                            # Activity is only "complete" if it exists in BOTH tables
+                            complete_activities = db_summary_ids & db_samples_ids
 
                             app.session.remove()
                             new_activities = []
                             for act in activities:
-                                # If not already in db, parse and insert
-                                if act.id not in db_activities['activity_id'].unique():
+                                if act.id not in complete_activities:
+                                    if act.id in db_summary_ids or act.id in db_samples_ids:
+                                        app.server.logger.info('Incomplete activity found, re-processing: "{}"'.format(act.name))
+                                    else:
+                                        app.server.logger.info('New Workout found: "{}"'.format(act.name))
                                     new_activities.append(act)
-                                    app.server.logger.info('New Workout found: "{}"'.format(act.name))
                             # If new workouts found, analyze and insert
                             if len(new_activities) > 0:
                                 with multiprocessing.Pool(initializer=engine.dispose) as pool:
