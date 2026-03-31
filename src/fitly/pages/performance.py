@@ -2009,7 +2009,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
 
     df_annotations = pd.read_sql(
         sql=app.session.query(annotations.athlete_id, annotations.date, annotations.annotation).filter(
-            athlete.athlete_id == 1).statement,
+            annotations.athlete_id == 1).statement,
         con=engine,
         index_col='date').sort_index(ascending=False)
 
@@ -3161,7 +3161,7 @@ def calculate_splits(df_samples):
 def create_annotation_table():
     df_annotations = pd.read_sql(
         sql=app.session.query(annotations.athlete_id, annotations.date, annotations.annotation).filter(
-            athlete.athlete_id == 1).statement,
+            annotations.athlete_id == 1).statement,
         con=engine).sort_index(ascending=False)
 
     app.session.remove()
