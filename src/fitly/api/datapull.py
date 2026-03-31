@@ -8,6 +8,7 @@ from ..api.sqlalchemy_declarative import *
 from sqlalchemy import func, delete
 import datetime
 from ..api.fitlyAPI import *
+from ..api import fitlyAPI as _fitlyAPI_module
 import pandas as pd
 from ..app import app
 from ..utils import config, withings_credentials_supplied, oura_credentials_supplied, nextcloud_credentials_supplied
@@ -18,8 +19,7 @@ import os
 def _pool_init(lock):
     """Initialize each worker process: set the shared DB write lock and
     dispose the inherited engine so each worker creates its own connections."""
-    import fitly.api.fitlyAPI as _api
-    _api._db_write_lock = lock
+    _fitlyAPI_module._db_write_lock = lock
     engine.dispose()
 
 
