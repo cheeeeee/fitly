@@ -45,7 +45,15 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
             if result and result[0].lower() != 'wal':
                 logger.warning(f"Failed to set WAL mode, got: {result[0]}")
             cursor.execute("PRAGMA synchronous=NORMAL")
-            cursor.execute("PRAGMA cache_size=-200000")
+            # 64MB cache - balanced for Pi RAM constraints
+            cursor.execute("PRAGMA cache_size=-64000")
+            # Store temp tables in memory instead of on the (slow) SD card
+            cursor.execute("PRAGMA temp_store=MEMORY")
+            # Memory-mapped I/O for faster reads (64MB)
+            cursor.execute("PRAGMA mmap_size=67108864")
+            # Increase WAL auto-checkpoint threshold so bulk writes aren't
+            # interrupted by frequent checkpoints (default is 1000 pages)
+            cursor.execute("PRAGMA wal_autocheckpoint=2000")
             break
         except Exception:
             if attempt < 2:
