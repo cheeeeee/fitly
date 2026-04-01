@@ -25,7 +25,7 @@ fi
 # ---------------------------------------------------------
 # PHASE 2: DOCKER CGROUP MEMORY FENCE VALIDATION
 # ---------------------------------------------------------
-echo -e "\n=== Checking Kernel Cgroup Limits ==="
+printf '\n=== Checking Kernel Cgroup Limits ===\n'
 
 # Check if the memory cgroup exists and is enabled (value '1' in column 4)
 if [ -f /proc/cgroups ] && awk '$1=="memory" {print $4}' /proc/cgroups | grep -q "1"; then
@@ -57,7 +57,7 @@ else
     fi
 fi
 
-echo -e "\n=== Pre-Flight Complete ==="
+printf '\n=== Pre-Flight Complete ===\n'
 # =============================================================================
 # init-host.sh — Fitly Host Optimizer, Pre-Flight Check & Config Generator
 # =============================================================================
