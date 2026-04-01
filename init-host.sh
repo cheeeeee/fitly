@@ -353,7 +353,18 @@ echo "│  Set callback URL to:  127.0.0.1:8050?strava" >&2
 echo "└────────────────────────────────────────────────────────────" >&2
 STRAVA_CLIENT_ID=$(_prompt    "Strava API client ID"                        "")
 STRAVA_CLIENT_SECRET=$(_prompt "Strava API client secret"                   "")
-STRAVA_AFTER_DATE=$(_prompt   "Import activities after this date (ISO 8601)" "2018-01-01T00:00:00Z")
+_strava_date_raw=$(_prompt   "Import activities after this date (MM-DD-YY)" "1-1-18")
+
+# Convert US date (MM-DD-YY or MM-DD-YYYY) to ISO 8601 for Strava API
+_mm=$(echo "$_strava_date_raw" | cut -d'-' -f1)
+_dd=$(echo "$_strava_date_raw" | cut -d'-' -f2)
+_yy=$(echo "$_strava_date_raw" | cut -d'-' -f3)
+# Expand 2-digit year: assume 20xx
+if [ ${#_yy} -le 2 ]; then _yy="20${_yy}"; fi
+# Zero-pad month and day
+_mm=$(printf '%02d' "$_mm")
+_dd=$(printf '%02d' "$_dd")
+STRAVA_AFTER_DATE="${_yy}-${_mm}-${_dd}T00:00:00Z"
 
 # --- Oura ---
 echo "" >&2
