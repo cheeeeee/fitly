@@ -12,15 +12,24 @@
 logger:
   # Log level: DEBUG, INFO, WARNING, ERROR
   level: DEBUG
+  # Path to the rotating log file
+  log_file: ./config/log.log
+  # Maximum log file size in bytes before rotating (default 10 MB)
+  log_max_bytes: 10000000
+  # Number of rotated log files to keep
+  log_backup_count: 5
 
 cron:
   # Set to true to enable hourly background data refresh
   hourly_pull: false
+  # Which hour(s) to run the refresh (APScheduler cron string, default '*' = every hour)
+  # Examples: '2' = 2am only, '*/2' = every 2 hours, '1,13' = 1am and 1pm
+  refresh_hour: "*"
 
 settings:
   # Password to protect the settings page (leave blank for no password)
   password: ""
-  # Number of gunicorn worker processes
+  # Number of gunicorn worker processes (also configurable in [server])
   gunicorn_workers: 3
 
 # ---------------------------------------------------------------------------
@@ -119,6 +128,45 @@ processing:
   # false — concurrent writes via SQLite WAL mode + retry logic
   #         Only use false on fast storage (SSD/NVMe).
   serialize_db_writes: true
+
+  # Maximum retry attempts when SQLite reports 'database is locked'
+  db_write_max_retries: 5
+  # Initial delay in seconds between retries (doubles each attempt: 1s, 2s, 4s, 8s…)
+  db_write_base_delay_s: 1.0
+
+# ---------------------------------------------------------------------------
+# Database — SQLite path and performance tuning
+# ---------------------------------------------------------------------------
+database:
+  # Path to the SQLite database file (absolute or relative to app start dir)
+  # Tip: mount a fast SSD/NVMe volume here for best performance
+  db_path: ./config/fitness.db
+
+  # Seconds to wait for a locked database before raising an error
+  connection_timeout_s: 30
+
+  # SQLite PRAGMA tuning — see https://www.sqlite.org/pragma.html
+  # Milliseconds SQLite waits when locked before raising an error
+  busy_timeout_ms: 30000
+  # Page cache size in MB (more = fewer disk reads; uses RAM)
+  # 64 MB is a safe default for Raspberry Pi; raise to 256+ on beefy machines
+  cache_size_mb: 64
+  # Memory-mapped I/O size in MB (0 to disable; speeds up reads on SSD)
+  mmap_size_mb: 64
+  # WAL checkpoint threshold in pages (higher = fewer checkpoint interruptions)
+  wal_autocheckpoint: 2000
+
+# ---------------------------------------------------------------------------
+# Server — network binding and gunicorn worker timeout
+# ---------------------------------------------------------------------------
+server:
+  # Interface to listen on (0.0.0.0 = all interfaces, 127.0.0.1 = localhost only)
+  host: "0.0.0.0"
+  # TCP port
+  port: 80
+  # Gunicorn per-worker request timeout in seconds
+  # Increase if long data-pull callbacks are being killed
+  request_timeout_s: 1200
 
 dashboard:
   # Page transition animation duration in milliseconds

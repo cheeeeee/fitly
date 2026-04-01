@@ -2,7 +2,7 @@ from flask import Flask
 from dash import Dash
 
 from .__version__ import __version__
-from .utils import get_dash_args_from_flask_config
+from .utils import get_dash_args_from_flask_config, config
 from sqlalchemy.orm import scoped_session
 from .api.database import SessionLocal, engine
 from .api.sqlalchemy_declarative import *
@@ -31,13 +31,31 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     import time
     import logging
     logger = logging.getLogger(__name__)
+
+    # Read tunable PRAGMA values from config (with safe defaults)
+    try:
+        busy_timeout_ms = int(config.get('database', 'busy_timeout_ms', fallback='30000'))
+    except Exception:
+        busy_timeout_ms = 30000
+    try:
+        cache_size_mb = int(config.get('database', 'cache_size_mb', fallback='64'))
+    except Exception:
+        cache_size_mb = 64
+    try:
+        mmap_size_mb = int(config.get('database', 'mmap_size_mb', fallback='64'))
+    except Exception:
+        mmap_size_mb = 64
+    try:
+        wal_autocheckpoint = int(config.get('database', 'wal_autocheckpoint', fallback='2000'))
+    except Exception:
+        wal_autocheckpoint = 2000
+
     # Temporarily disable sqlite3 implicit transactions to run WAL PRAGMA on an empty DB
     isolation_level = dbapi_connection.isolation_level
     dbapi_connection.isolation_level = None
-    
+
     cursor = dbapi_connection.cursor()
-    # Set busy timeout first so subsequent PRAGMAs wait instead of failing immediately
-    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
     for attempt in range(3):
         try:
             cursor.execute("PRAGMA journal_mode=WAL")
@@ -45,15 +63,10 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
             if result and result[0].lower() != 'wal':
                 logger.warning(f"Failed to set WAL mode, got: {result[0]}")
             cursor.execute("PRAGMA synchronous=NORMAL")
-            # 64MB cache - balanced for Pi RAM constraints
-            cursor.execute("PRAGMA cache_size=-64000")
-            # Store temp tables in memory instead of on the (slow) SD card
+            cursor.execute(f"PRAGMA cache_size=-{cache_size_mb * 1000}")
             cursor.execute("PRAGMA temp_store=MEMORY")
-            # Memory-mapped I/O for faster reads (64MB)
-            cursor.execute("PRAGMA mmap_size=67108864")
-            # Increase WAL auto-checkpoint threshold so bulk writes aren't
-            # interrupted by frequent checkpoints (default is 1000 pages)
-            cursor.execute("PRAGMA wal_autocheckpoint=2000")
+            cursor.execute(f"PRAGMA mmap_size={mmap_size_mb * 1024 * 1024}")
+            cursor.execute(f"PRAGMA wal_autocheckpoint={wal_autocheckpoint}")
             break
         except Exception:
             if attempt < 2:
@@ -61,7 +74,7 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
             else:
                 raise
     cursor.close()
-    
+
     # Restore standard SQLAlchemy transaction management
     dbapi_connection.isolation_level = isolation_level
 

@@ -32,11 +32,25 @@ types = ['time', 'latlng', 'distance', 'altitude', 'velocity_smooth', 'heartrate
 _db_write_lock = None
 
 
-def _retry_db_write(func, max_retries=5, base_delay=1.0):
+def _retry_db_write(func, max_retries=None, base_delay=None):
     """Retry a database write operation with exponential backoff.
     Acquires the shared multiprocessing lock (if available) so only one
-    process writes to SQLite at a time, preventing lock contention."""
+    process writes to SQLite at a time, preventing lock contention.
+
+    max_retries and base_delay default to values from [processing] config,
+    falling back to 5 and 1.0 if not set."""
     global _db_write_lock
+
+    if max_retries is None:
+        try:
+            max_retries = int(config.get('processing', 'db_write_max_retries', fallback='5'))
+        except Exception:
+            max_retries = 5
+    if base_delay is None:
+        try:
+            base_delay = float(config.get('processing', 'db_write_base_delay_s', fallback='1.0'))
+        except Exception:
+            base_delay = 1.0
 
     def _attempt():
         for attempt in range(max_retries):

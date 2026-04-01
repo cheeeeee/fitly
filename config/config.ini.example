@@ -1,15 +1,24 @@
 [logger]
 # Log level: DEBUG, INFO, WARNING, ERROR
 level = DEBUG
+# Path to the rotating log file
+log_file = ./config/log.log
+# Maximum log file size in bytes before rotating (default 10 MB)
+log_max_bytes = 10000000
+# Number of rotated log files to keep
+log_backup_count = 5
 
 [cron]
 # Set to True to enable hourly background data refresh
 hourly_pull = False
+# Which hour(s) to run the refresh (APScheduler cron format, default '*' = every hour)
+# Examples: '2' = 2am only, '*/2' = every 2 hours, '1,13' = 1am and 1pm
+refresh_hour = *
 
 [settings]
 # App password (used to protect settings page)
 password =
-# Number of gunicorn worker processes
+# Number of gunicorn worker processes (overridden by [server] gunicorn_workers)
 gunicorn_workers = 3
 
 # ---------------------------------------------------------------------------
@@ -107,6 +116,45 @@ workers = auto
 # false - Workers write concurrently, relying on SQLite WAL mode + retry logic.
 #         Only set to false if your database lives on fast storage (SSD/NVMe).
 serialize_db_writes = true
+
+# Maximum retry attempts when SQLite reports 'database is locked'
+db_write_max_retries = 5
+# Initial delay in seconds between retries (doubles each attempt)
+db_write_base_delay_s = 1.0
+
+# ---------------------------------------------------------------------------
+# Database - SQLite tuning and path
+# ---------------------------------------------------------------------------
+[database]
+# Path to the SQLite database file
+# Use an absolute path or a path relative to where the app is started from.
+# Mount a fast SSD volume here for best performance.
+db_path = ./config/fitness.db
+
+# Connection timeout: seconds to wait for a locked DB before raising an error
+connection_timeout_s = 30
+
+# SQLite PRAGMA tuning (see https://www.sqlite.org/pragma.html)
+# How long (ms) SQLite waits when the DB is locked before erroring
+busy_timeout_ms = 30000
+# Page cache size in MB (increases memory use, reduces disk I/O)
+cache_size_mb = 64
+# Memory-mapped I/O size in MB (0 to disable; helpful on SSD)
+mmap_size_mb = 64
+# WAL auto-checkpoint threshold in pages (higher = fewer interruptions during bulk writes)
+wal_autocheckpoint = 2000
+
+# ---------------------------------------------------------------------------
+# Server - host, port, and gunicorn timeouts
+# ---------------------------------------------------------------------------
+[server]
+# Address to bind to (0.0.0.0 = all interfaces, 127.0.0.1 = localhost only)
+host = 0.0.0.0
+# Port to listen on
+port = 80
+# Gunicorn worker request timeout in seconds
+# Increase if long data-pull callbacks are timing out
+request_timeout_s = 1200
 
 [dashboard]
 # Page transition animation duration in milliseconds
