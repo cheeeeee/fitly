@@ -1,6 +1,4 @@
 #!/bin/sh
-<<<<<<< HEAD
-
 echo "=== Fitly Host Optimizer & Pre-Flight Check ==="
 
 # ---------------------------------------------------------
@@ -60,7 +58,6 @@ else
 fi
 
 echo -e "\n=== Pre-Flight Complete ==="
-=======
 # =============================================================================
 # init-host.sh — Fitly Host Optimizer, Pre-Flight Check & Config Generator
 # =============================================================================
