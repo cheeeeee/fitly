@@ -94,20 +94,21 @@ echo ""
 _has_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 # Prompt with a default value; echoes the user's input (or default)
+# Prints the prompt to stderr so it is visible when called inside $()
 # Usage: result=$(_prompt "Question" "default_value")
 _prompt() {
     _msg="$1"
     _default="$2"
-    printf "  %s [%s]: " "$_msg" "$_default"
-    read -r _input
+    printf "  %s [%s]: " "$_msg" "$_default" >&2
+    read -r _input </dev/tty
     echo "${_input:-$_default}"
 }
 
 # Yes/no prompt; returns 0=yes 1=no
 # Usage: if _confirm "Enable cron?"; then ...
 _confirm() {
-    printf "  %s (y/N): " "$1"
-    read -r _yn
+    printf "  %s (y/N): " "$1" >&2
+    read -r _yn </dev/tty
     case "$_yn" in [yY]*) return 0;; *) return 1;; esac
 }
 
@@ -137,23 +138,58 @@ fi
 HAS_HT=0
 [ "$CPU_COUNT" -gt "$PHYSICAL_CORES" ] && HAS_HT=1
 
-# Storage type detection — look at the disk backing ./config or /
+# Storage type detection — look at the block device backing the current directory
 IS_SSD=0
+IS_SD=0
 STORAGE_TYPE="unknown"
 _dev=""
-if _has_cmd df && _has_cmd lsblk; then
-    _dev=$(df . 2>/dev/null | tail -1 | awk '{print $1}' | sed 's|/dev/||;s|[0-9]*$||;s|p[0-9]*$||')
+if _has_cmd df; then
+    # Get the raw device path (e.g. /dev/mmcblk0p2 or /dev/sda1)
+    _raw_dev=$(df . 2>/dev/null | tail -1 | awk '{print $1}')
+    # Strip /dev/ prefix
+    _base=$(echo "$_raw_dev" | sed 's|^/dev/||')
+
+    # Derive the block device name for /sys/block/ lookup:
+    #   mmcblk0p2 -> mmcblk0  (SD card: strip trailing pN)
+    #   sda1      -> sda      (normal disk: strip trailing digits)
+    #   nvme0n1p1 -> nvme0n1  (NVMe: strip trailing pN)
+    case "$_base" in
+        mmcblk*) _dev=$(echo "$_base" | sed 's|p[0-9]*$||') ;;
+        nvme*)   _dev=$(echo "$_base" | sed 's|p[0-9]*$||') ;;
+        *)       _dev=$(echo "$_base" | sed 's|[0-9]*$||') ;;
+    esac
+
     if [ -n "$_dev" ]; then
+        # Check rotational flag: 0 = SSD/NVMe/SD, 1 = spinning HDD
         _rotational=$(cat "/sys/block/${_dev}/queue/rotational" 2>/dev/null)
-        case "$_rotational" in
-            0) IS_SSD=1; STORAGE_TYPE="SSD/NVMe" ;;
-            1) STORAGE_TYPE="HDD/SD card" ;;
+
+        # SD card heuristics (all mmcblk devices are SD/eMMC)
+        case "$_dev" in
+            mmcblk*)
+                IS_SD=1
+                # Check if it is removable (SD card) vs soldered (eMMC)
+                _removable=$(cat "/sys/block/${_dev}/removable" 2>/dev/null)
+                if [ "$_removable" = "1" ]; then
+                    STORAGE_TYPE="SD card"
+                else
+                    STORAGE_TYPE="eMMC"
+                fi
+                ;;
+            *)
+                case "$_rotational" in
+                    0) IS_SSD=1; STORAGE_TYPE="SSD/NVMe" ;;
+                    1) STORAGE_TYPE="HDD" ;;
+                esac
+                ;;
         esac
     fi
 fi
-# Fallback: if on a Pi and no HDD detected, assume SD card
+# Fallback: if on a Pi and still unknown, assume SD card
 if [ "$STORAGE_TYPE" = "unknown" ] && [ -f /proc/device-tree/model ]; then
-    grep -qi "raspberry" /proc/device-tree/model 2>/dev/null && STORAGE_TYPE="SD card (Raspberry Pi)"
+    if grep -qi "raspberry" /proc/device-tree/model 2>/dev/null; then
+        IS_SD=1
+        STORAGE_TYPE="SD card (Raspberry Pi)"
+    fi
 fi
 [ "$STORAGE_TYPE" = "unknown" ] && STORAGE_TYPE="unknown (assuming HDD/SD)"
 echo "  Storage:    ${STORAGE_TYPE}"
@@ -192,8 +228,8 @@ CACHE_MB=$(( TOTAL_MEM / 4 ))
 [ "$CACHE_MB" -lt 32 ]  && CACHE_MB=32
 [ "$CACHE_MB" -gt 256 ] && CACHE_MB=256
 
-# mmap: same as cache on SSD, 0 on SD (mmap on SD card can hurt performance)
-if [ "$IS_SSD" -eq 1 ]; then
+# mmap: same as cache on SSD/eMMC, 0 on SD (mmap on SD card can hurt performance)
+if [ "$IS_SSD" -eq 1 ] || [ "$IS_SD" -eq 0 -a "$STORAGE_TYPE" = "eMMC" ]; then
     MMAP_MB=$CACHE_MB
 else
     MMAP_MB=0
@@ -309,73 +345,105 @@ echo "  Press Enter to accept the suggested default shown in [brackets]."
 echo ""
 
 # --- Strava (required) ---
-echo "[ Strava ]"
-STRAVA_CLIENT_ID=$(_prompt    "client_id"              "")
-STRAVA_CLIENT_SECRET=$(_prompt "client_secret"          "")
-STRAVA_AFTER_DATE=$(_prompt   "activities_after_date"  "2018-01-01T00:00:00Z")
+echo "" >&2
+echo "┌─ Strava (required) ────────────────────────────────────────" >&2
+echo "│  Strava is the primary source for workout data." >&2
+echo "│  Create an API app at: https://www.strava.com/settings/api" >&2
+echo "│  Set callback URL to:  127.0.0.1:8050?strava" >&2
+echo "└────────────────────────────────────────────────────────────" >&2
+STRAVA_CLIENT_ID=$(_prompt    "Strava API client ID"                        "")
+STRAVA_CLIENT_SECRET=$(_prompt "Strava API client secret"                   "")
+STRAVA_AFTER_DATE=$(_prompt   "Import activities after this date (ISO 8601)" "2018-01-01T00:00:00Z")
 
 # --- Oura ---
-echo ""
-echo "[ Oura Ring ] (leave blank to skip)"
-OURA_CLIENT_ID=$(_prompt     "client_id"     "")
-OURA_CLIENT_SECRET=$(_prompt "client_secret" "")
-OURA_DAYS_BACK=$(_prompt     "days_back"     "7")
+echo "" >&2
+echo "┌─ Oura Ring (optional — leave blank to skip) ─────────────" >&2
+echo "│  Powers the home page and HRV-based readiness analytics." >&2
+echo "│  Create an app at: https://cloud.ouraring.com/oauth/applications" >&2
+echo "│  Set redirect URI:  http://127.0.0.1:8050/settings?oura" >&2
+echo "└────────────────────────────────────────────────────────────" >&2
+OURA_CLIENT_ID=$(_prompt     "Oura API client ID"                           "")
+OURA_CLIENT_SECRET=$(_prompt "Oura API client secret"                       "")
+OURA_DAYS_BACK=$(_prompt     "Days of history to re-pull each refresh"      "7")
 
 # --- Spotify ---
-echo ""
-echo "[ Spotify ] (leave blank to skip)"
-SPOTIFY_CLIENT_ID=$(_prompt     "client_id"           "")
-SPOTIFY_CLIENT_SECRET=$(_prompt "client_secret"        "")
-SPOTIFY_REDIRECT=$(_prompt      "redirect_uri"         "")
+echo "" >&2
+echo "┌─ Spotify (optional — leave blank to skip) ───────────────" >&2
+echo "│  Tracks listening behavior and generates workout playlists." >&2
+echo "│  Create an app at: https://developer.spotify.com/dashboard/" >&2
+echo "│  Set redirect URI:  http://127.0.0.1:8050/settings?spotify" >&2
+echo "└────────────────────────────────────────────────────────────" >&2
+SPOTIFY_CLIENT_ID=$(_prompt     "Spotify API client ID"                     "")
+SPOTIFY_CLIENT_SECRET=$(_prompt "Spotify API client secret"                 "")
+SPOTIFY_REDIRECT=$(_prompt      "Spotify redirect URI"                      "http://127.0.0.1:8050/settings?spotify")
 
 # --- Peloton ---
-echo ""
-echo "[ Peloton ] (leave blank to skip)"
-PELOTON_USER=$(_prompt "username" "")
-PELOTON_PASS=$(_prompt "password" "")
+echo "" >&2
+echo "┌─ Peloton (optional — leave blank to skip) ───────────────" >&2
+echo "│  Matches Peloton class names to Strava workout titles." >&2
+echo "│  Uses your regular Peloton login credentials." >&2
+echo "└────────────────────────────────────────────────────────────" >&2
+PELOTON_USER=$(_prompt "Peloton account username (email)" "")
+PELOTON_PASS=$(_prompt "Peloton account password"         "")
 
 # --- Withings ---
-echo ""
-echo "[ Withings ] (leave blank to skip)"
-WITHINGS_CLIENT_ID=$(_prompt     "client_id"     "")
-WITHINGS_CLIENT_SECRET=$(_prompt "client_secret" "")
+echo "" >&2
+echo "┌─ Withings (optional — leave blank to skip) ──────────────" >&2
+echo "│  Body weight and body fat data for performance analytics." >&2
+echo "│  Create an app at: https://account.withings.com/partner/dashboard_oauth2" >&2
+echo "│  Set redirect URI:  http://127.0.0.1:8050/settings?withings" >&2
+echo "└────────────────────────────────────────────────────────────" >&2
+WITHINGS_CLIENT_ID=$(_prompt     "Withings API client ID"     "")
+WITHINGS_CLIENT_SECRET=$(_prompt "Withings API client secret" "")
 
 # --- Stryd ---
-echo ""
-echo "[ Stryd ] (leave blank to skip)"
-STRYD_USER=$(_prompt "username" "")
-STRYD_PASS=$(_prompt "password" "")
+echo "" >&2
+echo "┌─ Stryd (optional — leave blank to skip) ─────────────────" >&2
+echo "│  Pulls Critical Power (FTP) directly from Stryd." >&2
+echo "│  Uses your regular Stryd login credentials." >&2
+echo "└────────────────────────────────────────────────────────────" >&2
+STRYD_USER=$(_prompt "Stryd account username (email)" "")
+STRYD_PASS=$(_prompt "Stryd account password"         "")
 
 # --- Nextcloud ---
-echo ""
-echo "[ Nextcloud / Fitbod ] (leave blank to skip)"
-NC_URL=$(_prompt      "url"         "")
-NC_USER=$(_prompt     "username"    "")
-NC_PASS=$(_prompt     "password"    "")
-NC_FITBOD=$(_prompt   "fitbod_path" "")
+echo "" >&2
+echo "┌─ Nextcloud / Fitbod (optional — leave blank to skip) ────" >&2
+echo "│  Import Fitbod strength workout exports from Nextcloud." >&2
+echo "│  Export from Fitbod: Log > Settings > Export workout data" >&2
+echo "│  Upload the CSV to Nextcloud and enter the path below." >&2
+echo "└────────────────────────────────────────────────────────────" >&2
+NC_URL=$(_prompt      "Nextcloud server URL (e.g. https://cloud.example.com)" "")
+NC_USER=$(_prompt     "Nextcloud username"                                    "")
+NC_PASS=$(_prompt     "Nextcloud password"                                    "")
+NC_FITBOD=$(_prompt   "Path to Fitbod CSV on Nextcloud"                       "")
 
 # --- General ---
-echo ""
-echo "[ General ]"
-TZ=$(_prompt "timezone" "America/New_York")
-APP_PASSWORD=$(_prompt  "app password (leave blank for none)" "")
+echo "" >&2
+echo "┌─ General Settings ──────────────────────────────────────────" >&2
+echo "└────────────────────────────────────────────────────────────" >&2
+TZ=$(_prompt "Your timezone (IANA format, e.g. America/New_York)" "America/New_York")
+APP_PASSWORD=$(_prompt  "Settings page password (blank = no password)" "")
 CRON_ENABLE="false"
-_confirm "Enable hourly data refresh cron job?" && CRON_ENABLE="true"
-CRON_HOUR=$(_prompt "Refresh hour(s) (APScheduler, e.g. '*' = every hour, '2' = 2am)" "*")
+_confirm "Enable hourly automatic data refresh cron job?" && CRON_ENABLE="true"
+CRON_HOUR=$(_prompt "Cron refresh hour ('*' = every hour, '2' = 2am only)" "*")
 
 # --- Server ---
-echo ""
-echo "[ Server ]"
-SRV_HOST=$(_prompt    "bind host"              "0.0.0.0")
-SRV_PORT=$(_prompt    "port"                   "80")
-SRV_TIMEOUT=$(_prompt "request timeout (secs)" "$SERVER_TIMEOUT")
-GUN_WORKERS=$(_prompt "gunicorn workers"       "$RECOMMENDED_WORKERS")
+echo "" >&2
+echo "┌─ Server Settings ─────────────────────────────────────────" >&2
+echo "│  Network binding and gunicorn worker configuration." >&2
+echo "└────────────────────────────────────────────────────────────" >&2
+SRV_HOST=$(_prompt    "Bind address (0.0.0.0 = all interfaces)" "0.0.0.0")
+SRV_PORT=$(_prompt    "HTTP port"                               "80")
+SRV_TIMEOUT=$(_prompt "Request timeout in seconds"              "$SERVER_TIMEOUT")
+GUN_WORKERS=$(_prompt "Gunicorn worker count"                   "$RECOMMENDED_WORKERS")
 
 # --- Database path ---
-echo ""
-echo "[ Database ]"
-echo "  Tip: For best performance, point db_path at a path on fast storage (SSD)."
-DB_PATH=$(_prompt "db_path" "./config/fitness.db")
+echo "" >&2
+echo "┌─ Database ───────────────────────────────────────────────" >&2
+echo "│  Path to the SQLite database file." >&2
+echo "│  Tip: For best performance, use a path on fast storage (SSD)." >&2
+echo "└────────────────────────────────────────────────────────────" >&2
+DB_PATH=$(_prompt "SQLite database file path" "./config/fitness.db")
 
 # =============================================================================
 # Write config.yaml
