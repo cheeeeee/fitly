@@ -1,59 +1,88 @@
 [logger]
+# Log level: DEBUG, INFO, WARNING, ERROR
 level = DEBUG
 
 [cron]
+# Set to True to enable hourly background data refresh
 hourly_pull = False
 
 [settings]
+# App password (used to protect settings page)
 password =
+# Number of gunicorn worker processes
 gunicorn_workers = 3
 
-# Restart is required after connecting to spotify via settings page for stream to start working
+# ---------------------------------------------------------------------------
+# Spotify - leave client_id and client_secret blank to disable
+# Restart is required after connecting via settings page for stream to work
+# ---------------------------------------------------------------------------
 [spotify]
 client_id =
 client_secret =
 redirect_uri =
-# Range of % complete song needs to be in when changed to be considered a 'Skip'. Used to train model for 'liked' songs
+# Range of % of song duration that counts as a 'Skip' for model training
 skip_min_threshold = .05
 skip_max_threshold = .80
-# Min seconds song has to be on player for it to be inserted into db (ignore quick skips)
+# Min seconds a song must play before being saved to db (ignores quick skips)
 min_secs_listened = 15
-# interval at which spotify 'currently_playing' will be polled, .5 = 2 requests per second
+# Polling interval in seconds for the Spotify 'currently playing' endpoint
+# .5 = 2 requests/second; reduce if hitting API rate limits
 poll_interval_seconds = .5
 
+# ---------------------------------------------------------------------------
+# Peloton - leave username/password blank to disable
+# ---------------------------------------------------------------------------
 [peloton]
 username =
 password =
 
+# ---------------------------------------------------------------------------
+# Stryd - leave username/password blank to disable
+# ---------------------------------------------------------------------------
 [stryd]
 username =
 password =
-compare_against_age=1
-compare_against_gender=1
-compare_against_race_event=1
+compare_against_age = 1
+compare_against_gender = 1
+compare_against_race_event = 1
 
+# ---------------------------------------------------------------------------
+# Strava - required for activity import
+# ---------------------------------------------------------------------------
 [strava]
+# Only import activities after this date (ISO 8601)
 activities_after_date = 2018-01-01T00:00:00Z
 client_id =
 client_secret =
 redirect_uri = http://127.0.0.1:8050/settings?strava
 
+# ---------------------------------------------------------------------------
+# Oura - leave client_id and client_secret blank to disable
+# ---------------------------------------------------------------------------
 [oura]
 redirect_uri = http://127.0.0.1:8050/settings?oura
 client_id =
 client_secret =
+# How many days back to pull/refresh on each cron run
 days_back = 7
+# Chart color theme
 white = rgb(220, 220, 220)
 teal = rgb(134, 201, 250)
 light_blue = rgb(85, 139, 189)
 dark_blue = rgb(43, 70, 119)
 orange = rgb(234, 109, 95)
 
+# ---------------------------------------------------------------------------
+# Withings - leave client_id and client_secret blank to disable
+# ---------------------------------------------------------------------------
 [withings]
 redirect_uri = http://127.0.0.1:8050/settings?withings
 client_id =
 client_secret =
 
+# ---------------------------------------------------------------------------
+# Nextcloud (for Fitbod CSV sync) - leave fields blank to disable
+# ---------------------------------------------------------------------------
 [nextcloud]
 url =
 username =
@@ -63,6 +92,9 @@ fitbod_path =
 [timezone]
 timezone = America/New_York
 
+# ---------------------------------------------------------------------------
+# Processing - controls multiprocessing behavior for activity imports
+# ---------------------------------------------------------------------------
 [processing]
 # Number of parallel workers for activity parsing.
 # 'auto' uses half of available CPU cores (min 1), which is safe for most setups.
@@ -71,10 +103,11 @@ timezone = America/New_York
 workers = auto
 
 # Serialize all database writes behind a lock (true/false).
-# true  - One worker writes at a time (safe for slow SD card storage on Raspberry Pi).
+# true  - One worker writes at a time (safe for slow SD card storage, e.g. Raspberry Pi).
 # false - Workers write concurrently, relying on SQLite WAL mode + retry logic.
-#         Only set to false if your database is on fast storage (SSD/NVMe).
+#         Only set to false if your database lives on fast storage (SSD/NVMe).
 serialize_db_writes = true
 
 [dashboard]
-transition=2000
+# Page transition animation duration in milliseconds
+transition = 2000
