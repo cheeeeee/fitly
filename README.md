@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # ⚠️ Important: Running on Edge Devices (Raspberry Pi)
 
 If you are deploying this project on a Raspberry Pi or similar edge hardware running off an SD card, please read this section before starting the container.
