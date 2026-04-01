@@ -52,6 +52,7 @@ CONTENT_CONTAINER_ID = "page-content"
 
 # The ID of the element used to inject the navbar items into
 NAVBAR_CONTAINER_ID = "navbar-items"
+<<<<<<< HEAD
 
 import os
 
@@ -74,3 +75,5 @@ SESSION_COOKIE_SAMESITE = 'Lax'
 # Set to False because you are accessing the Pi via a local IP (HTTP). 
 # If you ever put this behind a domain name with SSL (HTTPS), change this to True immediately.
 SESSION_COOKIE_SECURE = False
+=======
+>>>>>>> feature/configurable-concurrency

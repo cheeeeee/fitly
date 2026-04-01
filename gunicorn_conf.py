@@ -41,15 +41,31 @@ else:
 recommended_workers = max(2, recommended_workers)
 
 # ---------------------------------------------------------------------------
-# Allow overrides via config.ini → env vars → computed default
+# Allow overrides via config (YAML preferred, falls back to INI) → env vars → computed default
 # ---------------------------------------------------------------------------
-import configparser
-_cfg = configparser.ConfigParser()        # renamed to avoid gunicorn collision
-_cfg.read('./config/config.ini')
+import sys
+sys.path.insert(0, './src')
+try:
+    from fitly.utils import config as _fitly_cfg
+    _using_fitly_cfg = True
+except Exception:
+    _using_fitly_cfg = False
+    import configparser
+    _fitly_cfg = configparser.ConfigParser()
+    _fitly_cfg.read('./config/config.ini')
+
+def _cfg_get(section, key, fallback=''):
+    """Read from FitlyConfig (YAML/INI/env) or raw configparser."""
+    if _using_fitly_cfg:
+        return _fitly_cfg.get(section, key, fallback=fallback)
+    try:
+        return _fitly_cfg.get(section, key)
+    except Exception:
+        return fallback
 
 try:
-    workers = int(_cfg.get('settings', 'gunicorn_workers'))
-except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
+    workers = int(_cfg_get('settings', 'gunicorn_workers'))
+except (ValueError, Exception):
     workers = recommended_workers          # smart default based on host hardware
 
 # Allow env-var override as a final escape hatch
@@ -57,16 +73,17 @@ if os.getenv("WEB_CONCURRENCY"):
     workers = int(os.getenv("WEB_CONCURRENCY"))
 
 # ---------------------------------------------------------------------------
-# Network / bind
-# ---------------------------------------------------------------------------
-host = os.getenv("HOST", "0.0.0.0")
-port = os.getenv("PORT", "80")
+# Network / bind — config [server] section, then env vars, then sensible defaults
+_cfg_host = _cfg_get('server', 'host')
+_cfg_port = _cfg_get('server', 'port')
+host = os.getenv("HOST") or _cfg_host or "0.0.0.0"
+port = os.getenv("PORT") or _cfg_port or "80"
 bind = os.getenv("BIND") or f"{host}:{port}"
 
 # ---------------------------------------------------------------------------
 # Gunicorn settings (module-level variables are read by gunicorn)
 # ---------------------------------------------------------------------------
-loglevel = os.getenv("LOG_LEVEL", "info")
+loglevel = os.getenv("LOG_LEVEL") or _cfg_get('logger', 'level') or "info"
 keepalive = 120
 errorlog = "-"
 
@@ -74,7 +91,8 @@ errorlog = "-"
 preload_app = True
 
 # Set generous timeout for long-running data-pull callbacks
-timeout = int(os.getenv("TIMEOUT", "1200"))
+_cfg_timeout = _cfg_get('server', 'request_timeout_s')
+timeout = int(os.getenv("TIMEOUT") or _cfg_timeout or "1200")
 
 # ---------------------------------------------------------------------------
 # Startup banner

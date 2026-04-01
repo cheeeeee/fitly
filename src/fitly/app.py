@@ -12,17 +12,42 @@ app = create_dash(server)
 # New DB startup tasks
 db_startup(app)
 
+<<<<<<< HEAD
 # Logging
+=======
+# Logging — all values configurable via [logger] section
+>>>>>>> feature/configurable-concurrency
 import logging
 from logging.handlers import RotatingFileHandler
 from .utils import config
 from .api.sqlalchemy_declarative import dbRefreshStatus
 
+<<<<<<< HEAD
 # Can also use %(pathname)s for full pathname for file instead of %(module)s
 handler = RotatingFileHandler('./config/log.log', maxBytes=10000000, backupCount=5)
 formatter = logging.Formatter("[%(asctime)s] %(levelname)s from %(module)s line %(lineno)d - %(message)s")
 handler.setFormatter(formatter)
 app.server.logger.setLevel(config.get('logger', 'level'))
+=======
+try:
+    _log_file = config.get('logger', 'log_file', fallback='') or './config/log.log'
+except Exception:
+    _log_file = './config/log.log'
+try:
+    _log_max_bytes = int(config.get('logger', 'log_max_bytes', fallback='10000000'))
+except Exception:
+    _log_max_bytes = 10_000_000
+try:
+    _log_backup_count = int(config.get('logger', 'log_backup_count', fallback='5'))
+except Exception:
+    _log_backup_count = 5
+
+# Can also use %(pathname)s for full pathname for file instead of %(module)s
+handler = RotatingFileHandler(_log_file, maxBytes=_log_max_bytes, backupCount=_log_backup_count)
+formatter = logging.Formatter("[%(asctime)s] %(levelname)s from %(module)s line %(lineno)d - %(message)s")
+handler.setFormatter(formatter)
+app.server.logger.setLevel(config.get('logger', 'level') or 'DEBUG')
+>>>>>>> feature/configurable-concurrency
 app.server.logger.addHandler(handler)
 # Suppress WSGI info logs
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
@@ -37,8 +62,19 @@ with server.app_context():
         try:
             from .api.datapull import refresh_database
 
+<<<<<<< HEAD
             scheduler = BackgroundScheduler()
             scheduler.add_job(func=refresh_database, trigger="cron", hour='*')
+=======
+            # cron_hour: which hour(s) to run the data pull (APScheduler format, default every hour)
+            try:
+                _cron_hour = config.get('cron', 'refresh_hour', fallback='*') or '*'
+            except Exception:
+                _cron_hour = '*'
+
+            scheduler = BackgroundScheduler()
+            scheduler.add_job(func=refresh_database, trigger="cron", hour=_cron_hour)
+>>>>>>> feature/configurable-concurrency
 
             # Add spotify job on 20 min schedule since API only allows grabbing the last 50 songs
             if spotify_credentials_supplied:
