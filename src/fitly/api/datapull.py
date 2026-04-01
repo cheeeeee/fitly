@@ -16,8 +16,6 @@ import multiprocessing
 import os
 
 
-<<<<<<< HEAD
-=======
 def _get_processing_config():
     """Read [processing] settings from config.ini with safe fallbacks."""
     try:
@@ -37,7 +35,6 @@ def _get_processing_config():
     return pool_size, serialize
 
 
->>>>>>> feature/configurable-concurrency
 def _pool_init(lock):
     """Initialize each worker process: set the shared DB write lock and
     dispose the inherited engine so each worker creates its own connections."""
@@ -248,13 +245,6 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
                                     new_activities.append(act)
                             # If new workouts found, analyze and insert
                             if len(new_activities) > 0:
-<<<<<<< HEAD
-                                # Shared lock ensures only one worker writes to SQLite at a time
-                                db_lock = multiprocessing.Lock()
-                                # Limit to 2 workers: leaves CPU headroom for OS + web app
-                                # maxtasksperchild=1: each worker exits after 1 activity, freeing memory
-                                pool_size = max(1, (os.cpu_count() or 2) // 2)
-=======
                                 pool_size, serialize_writes = _get_processing_config()
                                 # Pass a shared lock only when serialization is enabled.
                                 # With serialize_db_writes=false, workers write concurrently
@@ -265,7 +255,6 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
                                     f'{pool_size} worker(s), '
                                     f'serialize_db_writes={serialize_writes}'
                                 )
->>>>>>> feature/configurable-concurrency
                                 with multiprocessing.Pool(
                                     processes=pool_size,
                                     initializer=_pool_init,

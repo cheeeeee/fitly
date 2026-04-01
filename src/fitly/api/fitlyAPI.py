@@ -32,14 +32,6 @@ types = ['time', 'latlng', 'distance', 'altitude', 'velocity_smooth', 'heartrate
 _db_write_lock = None
 
 
-<<<<<<< HEAD
-def _retry_db_write(func, max_retries=5, base_delay=1.0):
-    """Retry a database write operation with exponential backoff.
-    Acquires the shared multiprocessing lock (if available) so only one
-    process writes to SQLite at a time, preventing lock contention."""
-    global _db_write_lock
-
-=======
 def _retry_db_write(func, max_retries=None, base_delay=None):
     """Retry a database write operation with exponential backoff.
     Acquires the shared multiprocessing lock (if available) so only one
@@ -60,7 +52,6 @@ def _retry_db_write(func, max_retries=None, base_delay=None):
         except Exception:
             base_delay = 1.0
 
->>>>>>> feature/configurable-concurrency
     def _attempt():
         for attempt in range(max_retries):
             try:

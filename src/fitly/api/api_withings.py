@@ -12,11 +12,6 @@ from ..utils import config
 import pickle
 from typing import cast
 
-<<<<<<< HEAD
-client_id = config.get('withings', 'client_id')
-client_secret = config.get('withings', 'client_secret')
-redirect_uri = config.get('withings', 'redirect_uri')
-=======
 try:
     client_id = config.get('withings', 'client_id')
     client_secret = config.get('withings', 'client_secret')
@@ -25,7 +20,6 @@ except Exception:
     client_id = ''
     client_secret = ''
     redirect_uri = ''
->>>>>>> feature/configurable-concurrency
 
 
 def save_withings_token(credentials: CredentialsType) -> None:
@@ -42,16 +36,11 @@ def save_withings_token(credentials: CredentialsType) -> None:
 
 def load_credentials() -> CredentialsType:
     try:
-<<<<<<< HEAD
-        token_pickle = app.session.query(apiTokens.tokens).filter(apiTokens.service == 'Withings').first().tokens
-        creds = cast(CredentialsType, pickle.loads(token_pickle))
-=======
         result = app.session.query(apiTokens.tokens).filter(apiTokens.service == 'Withings').first()
         if result is None or result.tokens is None:
             app.session.remove()
             return None
         creds = cast(CredentialsType, pickle.loads(result.tokens))
->>>>>>> feature/configurable-concurrency
         app.session.remove()
     except BaseException as e:
         app.server.logger.error(e)

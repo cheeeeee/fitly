@@ -2,11 +2,7 @@ from flask import Flask
 from dash import Dash
 
 from .__version__ import __version__
-<<<<<<< HEAD
-from .utils import get_dash_args_from_flask_config
-=======
 from .utils import get_dash_args_from_flask_config, config
->>>>>>> feature/configurable-concurrency
 from sqlalchemy.orm import scoped_session
 from .api.database import SessionLocal, engine
 from .api.sqlalchemy_declarative import *
@@ -29,31 +25,12 @@ def create_flask(config_object=f"{__package__}.settings"):
 
     return server
 
-<<<<<<< HEAD
-# SQL w/ WAL - Optimized for Low-Memory Edge Devices
-=======
 # SQL w/ WAL
->>>>>>> feature/configurable-concurrency
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
     import time
     import logging
     logger = logging.getLogger(__name__)
-<<<<<<< HEAD
-    # Temporarily disable sqlite3 implicit transactions to run WAL PRAGMA on an empty DB
-    isolation_level = dbapi_connection.isolation_level
-    dbapi_connection.isolation_level = None
-    
-    cursor = dbapi_connection.cursor()
-    # 1. Enable Write-Ahead Logging for concurrent multi-threading
-    cursor.execute("PRAGMA journal_mode=WAL")
-    # 2. Relax sync to prevent SD card I/O lockups
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    # 3. Cap the connection cache at 10MB to prevent OOM panics
-    cursor.execute("PRAGMA cache_size=-10000")
-    cursor.close()
-    
-=======
 
     # Read tunable PRAGMA values from config (with safe defaults)
     try:
@@ -98,7 +75,6 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
                 raise
     cursor.close()
 
->>>>>>> feature/configurable-concurrency
     # Restore standard SQLAlchemy transaction management
     dbapi_connection.isolation_level = isolation_level
 

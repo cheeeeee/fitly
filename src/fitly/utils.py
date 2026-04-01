@@ -159,12 +159,6 @@ def get_url(path):
 import json
 from datetime import timedelta
 import configparser
-<<<<<<< HEAD
-import pytz
-
-config = configparser.ConfigParser()
-config.read('./config/config.ini')
-=======
 import os
 import pytz
 
@@ -250,7 +244,6 @@ class FitlyConfig:
 
 
 config = FitlyConfig()
->>>>>>> feature/configurable-concurrency
 
 local_tz = pytz.timezone(config.get('timezone', 'timezone'))
 
@@ -342,12 +335,7 @@ def calc_prev_sunday(d):
 
 def update_config(section, parameter, value):
     config.set(section, parameter, value)
-<<<<<<< HEAD
-    with open('./config/config.ini', 'w') as configfile:
-        config.write(configfile)
-=======
     config.write_to_file()
->>>>>>> feature/configurable-concurrency
 
 
 def utc_to_local(utc_dt):
