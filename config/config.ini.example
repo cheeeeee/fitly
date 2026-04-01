@@ -63,5 +63,18 @@ fitbod_path =
 [timezone]
 timezone = America/New_York
 
+[processing]
+# Number of parallel workers for activity parsing.
+# 'auto' uses half of available CPU cores (min 1), which is safe for most setups.
+# Increase on machines with fast storage (SSD/NVMe) for faster imports.
+# Set to 1 to disable parallelism entirely.
+workers = auto
+
+# Serialize all database writes behind a lock (true/false).
+# true  - One worker writes at a time (safe for slow SD card storage on Raspberry Pi).
+# false - Workers write concurrently, relying on SQLite WAL mode + retry logic.
+#         Only set to false if your database is on fast storage (SSD/NVMe).
+serialize_db_writes = true
+
 [dashboard]
 transition=2000
