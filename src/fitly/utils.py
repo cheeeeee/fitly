@@ -159,10 +159,91 @@ def get_url(path):
 import json
 from datetime import timedelta
 import configparser
+import os
 import pytz
 
-config = configparser.ConfigParser()
-config.read('./config/config.ini')
+
+class FitlyConfig:
+    """
+    Configuration loader that supports three sources, in priority order:
+
+      1. Environment variables  FITLY_<SECTION>_<KEY>  (uppercase)
+         Example: FITLY_STRAVA_CLIENT_ID=abc123
+
+      2. config/config.yaml  (if the file exists)
+
+      3. config/config.ini   (classic INI fallback)
+
+    Exposes the same .get(section, key) interface as configparser so
+    all existing callers work without modification.
+    """
+
+    def __init__(self):
+        self._yaml_data = {}
+        self._ini = configparser.ConfigParser()
+        self._using_yaml = False
+
+        yaml_path = './config/config.yaml'
+        ini_path = './config/config.ini'
+
+        if os.path.isfile(yaml_path):
+            try:
+                import yaml
+                with open(yaml_path, 'r') as f:
+                    self._yaml_data = yaml.safe_load(f) or {}
+                self._using_yaml = True
+            except Exception as e:
+                # YAML load failed — fall back to INI silently
+                self._using_yaml = False
+
+        if not self._using_yaml:
+            self._ini.read(ini_path)
+
+    def get(self, section, key, fallback=''):
+        """Return value from env var > YAML > INI, or fallback if missing."""
+        # 1. Environment variable override
+        env_key = f'FITLY_{section.upper()}_{key.upper()}'
+        env_val = os.environ.get(env_key)
+        if env_val is not None:
+            return env_val
+
+        # 2. YAML
+        if self._using_yaml:
+            section_data = self._yaml_data.get(section, {})
+            if isinstance(section_data, dict) and key in section_data:
+                val = section_data[key]
+                return str(val) if val is not None else fallback
+            return fallback
+
+        # 3. INI
+        try:
+            return self._ini.get(section, key)
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            return fallback
+
+    def set(self, section, key, value):
+        """Update a value in memory (used by update_config)."""
+        if self._using_yaml:
+            if section not in self._yaml_data:
+                self._yaml_data[section] = {}
+            self._yaml_data[section][key] = value
+        else:
+            if not self._ini.has_section(section):
+                self._ini.add_section(section)
+            self._ini.set(section, key, value)
+
+    def write_to_file(self):
+        """Persist in-memory changes back to the active config file."""
+        if self._using_yaml:
+            import yaml
+            with open('./config/config.yaml', 'w') as f:
+                yaml.dump(self._yaml_data, f, default_flow_style=False, allow_unicode=True)
+        else:
+            with open('./config/config.ini', 'w') as f:
+                self._ini.write(f)
+
+
+config = FitlyConfig()
 
 local_tz = pytz.timezone(config.get('timezone', 'timezone'))
 
@@ -254,8 +335,7 @@ def calc_prev_sunday(d):
 
 def update_config(section, parameter, value):
     config.set(section, parameter, value)
-    with open('./config/config.ini', 'w') as configfile:
-        config.write(configfile)
+    config.write_to_file()
 
 
 def utc_to_local(utc_dt):
