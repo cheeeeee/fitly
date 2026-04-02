@@ -12,15 +12,23 @@ from ..utils import config
 from functools import reduce
 import pickle
 
-client_id = config.get('oura', 'client_id')
-client_secret = config.get('oura', 'client_secret')
-redirect_uri = config.get('oura', 'redirect_uri')
+try:
+    client_id = config.get('oura', 'client_id')
+    client_secret = config.get('oura', 'client_secret')
+    redirect_uri = config.get('oura', 'redirect_uri')
+except Exception:
+    client_id = ''
+    client_secret = ''
+    redirect_uri = ''
 
 
 def current_token_dict():
     try:
-        token_dict = app.session.query(apiTokens.tokens).filter(apiTokens.service == 'Oura').first().tokens
-        token_pickle = pickle.loads(token_dict)
+        result = app.session.query(apiTokens.tokens).filter(apiTokens.service == 'Oura').first()
+        if result is None or result.tokens is None:
+            app.session.remove()
+            return {}
+        token_pickle = pickle.loads(result.tokens)
         app.session.remove()
     except BaseException as e:
         app.server.logger.error(e)
@@ -423,7 +431,10 @@ def top_n_correlations(n, column, days=180):
 
 def pull_oura_data():
     if oura_connected():
-        days_back = int(config.get('oura', 'days_back'))
+        try:
+            days_back = int(config.get('oura', 'days_back'))
+        except Exception:
+            days_back = 7
 
         token_dict = current_token_dict()
         oura = OuraClient(client_id=client_id, client_secret=client_secret, access_token=token_dict['access_token'],

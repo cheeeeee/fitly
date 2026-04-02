@@ -8,16 +8,24 @@ from ..app import app
 import time
 import pickle
 
-client_id = config.get('strava', 'client_id')
-client_secret = config.get('strava', 'client_secret')
-redirect_uri = config.get('strava', 'redirect_uri')
+try:
+    client_id = config.get('strava', 'client_id')
+    client_secret = config.get('strava', 'client_secret')
+    redirect_uri = config.get('strava', 'redirect_uri')
+except Exception:
+    client_id = ''
+    client_secret = ''
+    redirect_uri = ''
 
 
 # Retrieve current tokens from db
 def current_token_dict():
     try:
-        token_dict = app.session.query(apiTokens.tokens).filter(apiTokens.service == 'Strava').first().tokens
-        token_pickle = pickle.loads(token_dict)
+        result = app.session.query(apiTokens.tokens).filter(apiTokens.service == 'Strava').first()
+        if result is None or result.tokens is None:
+            app.session.remove()
+            return {}
+        token_pickle = pickle.loads(result.tokens)
         app.session.remove()
     except BaseException as e:
         app.server.logger.error(e)

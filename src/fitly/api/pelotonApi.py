@@ -19,8 +19,12 @@ import os
 _BASE_URL = 'https://api.onepeloton.com'
 
 # Mandatory credentials
-PELOTON_USERNAME = config.get('peloton', 'username')
-PELOTON_PASSWORD = config.get('peloton', 'password')
+try:
+    PELOTON_USERNAME = config.get('peloton', 'username')
+    PELOTON_PASSWORD = config.get('peloton', 'password')
+except Exception:
+    PELOTON_USERNAME = ''
+    PELOTON_PASSWORD = ''
 
 _USER_AGENT = "Mozilla/5.0"
 

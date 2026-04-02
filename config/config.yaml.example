@@ -1,0 +1,173 @@
+# Fitly configuration — YAML format
+# Copy this file to config/config.yaml and fill in your values.
+# This file takes precedence over config.ini if both exist.
+#
+# Cloud-native override: any value can also be set via environment variable
+# using the pattern:  FITLY_<SECTION>_<KEY>  (uppercase, underscores)
+# Example:  FITLY_STRAVA_CLIENT_ID=abc123
+#
+# Sections with credentials: leave client_id / client_secret blank to disable
+# that integration — the app starts cleanly without any optional service.
+
+logger:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: DEBUG
+  # Path to the rotating log file
+  log_file: ./config/log.log
+  # Maximum log file size in bytes before rotating (default 10 MB)
+  log_max_bytes: 10000000
+  # Number of rotated log files to keep
+  log_backup_count: 5
+
+cron:
+  # Set to true to enable hourly background data refresh
+  hourly_pull: false
+  # Which hour(s) to run the refresh (APScheduler cron string, default '*' = every hour)
+  # Examples: '2' = 2am only, '*/2' = every 2 hours, '1,13' = 1am and 1pm
+  refresh_hour: "*"
+
+settings:
+  # Password to protect the settings page (leave blank for no password)
+  password: ""
+  # Number of gunicorn worker processes (also configurable in [server])
+  gunicorn_workers: 3
+
+# ---------------------------------------------------------------------------
+# Spotify — leave client_id / client_secret blank to disable
+# A restart is required after connecting via the settings page for the
+# live stream listener to start.
+# ---------------------------------------------------------------------------
+spotify:
+  client_id: ""
+  client_secret: ""
+  redirect_uri: ""
+  # Fraction of song duration that counts as a 'Skip' for model training
+  skip_min_threshold: 0.05
+  skip_max_threshold: 0.80
+  # Minimum seconds a song must play before being saved to the database
+  min_secs_listened: 15
+  # Polling interval in seconds for Spotify 'currently playing' endpoint
+  # 0.5 = 2 requests/second; increase if hitting API rate limits
+  poll_interval_seconds: 0.5
+
+# ---------------------------------------------------------------------------
+# Peloton — leave username / password blank to disable
+# ---------------------------------------------------------------------------
+peloton:
+  username: ""
+  password: ""
+
+# ---------------------------------------------------------------------------
+# Stryd — leave username / password blank to disable
+# ---------------------------------------------------------------------------
+stryd:
+  username: ""
+  password: ""
+  compare_against_age: 1
+  compare_against_gender: 1
+  compare_against_race_event: 1
+
+# ---------------------------------------------------------------------------
+# Strava — required for activity import
+# ---------------------------------------------------------------------------
+strava:
+  # Only import activities on or after this date (ISO 8601)
+  activities_after_date: "2018-01-01T00:00:00Z"
+  client_id: ""
+  client_secret: ""
+  redirect_uri: "http://127.0.0.1:8050/settings?strava"
+
+# ---------------------------------------------------------------------------
+# Oura — leave client_id / client_secret blank to disable
+# ---------------------------------------------------------------------------
+oura:
+  redirect_uri: "http://127.0.0.1:8050/settings?oura"
+  client_id: ""
+  client_secret: ""
+  # How many days back to re-pull / refresh on each cron run
+  days_back: 7
+  # Chart color theme
+  white: "rgb(220, 220, 220)"
+  teal: "rgb(134, 201, 250)"
+  light_blue: "rgb(85, 139, 189)"
+  dark_blue: "rgb(43, 70, 119)"
+  orange: "rgb(234, 109, 95)"
+
+# ---------------------------------------------------------------------------
+# Withings — leave client_id / client_secret blank to disable
+# ---------------------------------------------------------------------------
+withings:
+  redirect_uri: "http://127.0.0.1:8050/settings?withings"
+  client_id: ""
+  client_secret: ""
+
+# ---------------------------------------------------------------------------
+# Nextcloud (Fitbod CSV sync) — leave fields blank to disable
+# ---------------------------------------------------------------------------
+nextcloud:
+  url: ""
+  username: ""
+  password: ""
+  fitbod_path: ""
+
+timezone:
+  timezone: "America/New_York"
+
+# ---------------------------------------------------------------------------
+# Processing — controls multiprocessing behaviour for activity imports
+# ---------------------------------------------------------------------------
+processing:
+  # Number of parallel workers for activity parsing.
+  # 'auto' uses half of available CPU cores (min 1).
+  # Increase on machines with fast storage (SSD/NVMe).
+  # Set to 1 to disable parallelism entirely.
+  workers: auto
+
+  # Serialize all database writes behind a lock.
+  # true  — one worker writes at a time (safe for SD cards, e.g. Raspberry Pi)
+  # false — concurrent writes via SQLite WAL mode + retry logic
+  #         Only use false on fast storage (SSD/NVMe).
+  serialize_db_writes: true
+
+  # Maximum retry attempts when SQLite reports 'database is locked'
+  db_write_max_retries: 5
+  # Initial delay in seconds between retries (doubles each attempt: 1s, 2s, 4s, 8s…)
+  db_write_base_delay_s: 1.0
+
+# ---------------------------------------------------------------------------
+# Database — SQLite path and performance tuning
+# ---------------------------------------------------------------------------
+database:
+  # Path to the SQLite database file (absolute or relative to app start dir)
+  # Tip: mount a fast SSD/NVMe volume here for best performance
+  db_path: ./config/fitness.db
+
+  # Seconds to wait for a locked database before raising an error
+  connection_timeout_s: 30
+
+  # SQLite PRAGMA tuning — see https://www.sqlite.org/pragma.html
+  # Milliseconds SQLite waits when locked before raising an error
+  busy_timeout_ms: 30000
+  # Page cache size in MB (more = fewer disk reads; uses RAM)
+  # 64 MB is a safe default for Raspberry Pi; raise to 256+ on beefy machines
+  cache_size_mb: 64
+  # Memory-mapped I/O size in MB (0 to disable; speeds up reads on SSD)
+  mmap_size_mb: 64
+  # WAL checkpoint threshold in pages (higher = fewer checkpoint interruptions)
+  wal_autocheckpoint: 2000
+
+# ---------------------------------------------------------------------------
+# Server — network binding and gunicorn worker timeout
+# ---------------------------------------------------------------------------
+server:
+  # Interface to listen on (0.0.0.0 = all interfaces, 127.0.0.1 = localhost only)
+  host: "0.0.0.0"
+  # TCP port
+  port: 80
+  # Gunicorn per-worker request timeout in seconds
+  # Increase if long data-pull callbacks are being killed
+  request_timeout_s: 1200
+
+dashboard:
+  # Page transition animation duration in milliseconds
+  transition: 2000

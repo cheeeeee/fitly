@@ -6,9 +6,8 @@ on:
     branches: [ "**" ]
   workflow_dispatch: 
   pull_request:
-    branches:
-      - master
-
+    branches: [ "**" ]
+    
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -44,6 +43,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+
             # Auto-generates a tag from the branch or PR name
             type=ref,event=branch
             type=ref,event=pr

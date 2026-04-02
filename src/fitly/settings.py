@@ -71,6 +71,6 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 
 # 4. HTTPS Enforcement
-# Set to False because you are accessing the Pi via a local IP (HTTP). 
+# Set to False because you are accessing the Pi via a local IP (HTTP).
 # If you ever put this behind a domain name with SSL (HTTPS), change this to True immediately.
 SESSION_COOKIE_SECURE = False

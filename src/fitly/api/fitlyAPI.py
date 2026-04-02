@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 import numpy as np
 from ..api.sqlalchemy_declarative import ouraSleepSummary, ouraReadinessSummary, withings, athlete, stravaSummary, \
-    strydSummary, fitbod, workoutStepLog, dbRefreshStatus
-from sqlalchemy import func, cast, Date
+    stravaSamples, stravaBestSamples, strydSummary, fitbod, workoutStepLog, dbRefreshStatus
+from sqlalchemy import func, cast, Date, delete
 from sweat.io.models.dataframes import WorkoutDataFrame, Athlete
 from sweat.pdm import critical_power
 from sweat.metrics.core import weighted_average_power
@@ -17,11 +17,59 @@ from ..app import app
 from .database import engine
 from ..utils import peloton_credentials_supplied, stryd_credentials_supplied, config
 import os
+import time
+import logging
 import pandas as pd
 from ..pages.performance import get_hrv_df, readiness_score_recommendation
 
+logger = logging.getLogger(__name__)
+
 types = ['time', 'latlng', 'distance', 'altitude', 'velocity_smooth', 'heartrate', 'cadence', 'watts', 'temp',
          'moving', 'grade_smooth']
+
+# Global lock shared across multiprocessing workers to serialize DB writes.
+# Set by _pool_init when a worker process starts.
+_db_write_lock = None
+
+
+def _retry_db_write(func, max_retries=None, base_delay=None):
+    """Retry a database write operation with exponential backoff.
+    Acquires the shared multiprocessing lock (if available) so only one
+    process writes to SQLite at a time, preventing lock contention.
+
+    max_retries and base_delay default to values from [processing] config,
+    falling back to 5 and 1.0 if not set."""
+    global _db_write_lock
+
+    if max_retries is None:
+        try:
+            max_retries = int(config.get('processing', 'db_write_max_retries', fallback='5'))
+        except Exception:
+            max_retries = 5
+    if base_delay is None:
+        try:
+            base_delay = float(config.get('processing', 'db_write_base_delay_s', fallback='1.0'))
+        except Exception:
+            base_delay = 1.0
+
+    def _attempt():
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except Exception as e:
+                if 'database is locked' in str(e) and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f'Database locked, retrying in {delay}s (attempt {attempt + 1}/{max_retries})')
+                    time.sleep(delay)
+                else:
+                    raise
+
+    # If a shared lock exists, hold it for the entire write operation
+    if _db_write_lock is not None:
+        with _db_write_lock:
+            return _attempt()
+    else:
+        return _attempt()
 
 
 def db_process_flag(flag):
@@ -75,7 +123,9 @@ def get_peloton_workout_summary_cache(act_start_date_utc):
 
 class FitlyActivity(stravalib.model.Activity):
 
-    def __new__(cls, activity):
+    def __new__(cls, activity=None, **kwargs):
+        if activity is None:
+            return super().__new__(cls)
         activity.__class__ = FitlyActivity
         return activity
 
@@ -138,7 +188,7 @@ class FitlyActivity(stravalib.model.Activity):
             3: float(self.Athlete.hr_zone_threshold_3),
             4: float(self.Athlete.hr_zone_threshold_4)
         }
-        if 'ride' in self.type.lower():
+        if self.type and 'ride' in self.type.lower():
             self.power_zones = {
                 1: float(self.Athlete.cycle_power_zone_threshold_1),
                 2: float(self.Athlete.cycle_power_zone_threshold_2),
@@ -147,7 +197,7 @@ class FitlyActivity(stravalib.model.Activity):
                 5: float(self.Athlete.cycle_power_zone_threshold_5),
                 6: float(self.Athlete.cycle_power_zone_threshold_6)
             }
-        elif 'run' in self.type.lower() or 'walk' in self.type.lower():
+        elif self.type and ('run' in self.type.lower() or 'walk' in self.type.lower()):
             self.power_zones = {
                 1: float(self.Athlete.run_power_zone_threshold_1),
                 2: float(self.Athlete.run_power_zone_threshold_2),
@@ -224,7 +274,7 @@ class FitlyActivity(stravalib.model.Activity):
     def get_ftp(
             self):  # TODO: Update with auto calculated critical power so users do not have to flag (or take) FTP tests
         self.stryd_metrics = []
-        if 'run' in self.type.lower() or 'walk' in self.type.lower():
+        if self.type and ('run' in self.type.lower() or 'walk' in self.type.lower()):
             # If stryd credentials in config, grab ftp
             if stryd_credentials_supplied:
                 stryd_df = pd.read_sql(
@@ -254,7 +304,7 @@ class FitlyActivity(stravalib.model.Activity):
                     self.ftp = self.Athlete.run_ftp
             else:
                 self.ftp = self.Athlete.run_ftp
-        elif 'ride' in self.type.lower():
+        elif self.type and 'ride' in self.type.lower():
             # TODO: Switch over to using Critical Power for everything once we get the critical power model working
 
             try:
@@ -390,7 +440,7 @@ class FitlyActivity(stravalib.model.Activity):
 
         trimp_weighting_factor = 1.92 if str(self.Athlete.birthday).upper() == 'M' else 1.67
         # Calculate power metrics
-        if 'weighttraining' in self.type.lower():
+        if self.type and 'weighttraining' in self.type.lower():
             self.tss, self.ri = self.wss_score()
 
         elif self.max_watts is not None and self.ftp is not None:
@@ -556,9 +606,9 @@ class FitlyActivity(stravalib.model.Activity):
     # Continue
         if self.max_watts is not None:
             if self.ftp is not None:
-                if 'ride' in self.type.lower():
+                if self.type and 'ride' in self.type.lower():
                     pz_5, pz_6 = self.power_zones[5], self.power_zones[6]
-                elif 'run' in self.type.lower() or 'walk' in self.type.lower():
+                elif self.type and ('run' in self.type.lower() or 'walk' in self.type.lower()):
                     pz_5, pz_6 = 99, 99
                 self.df_samples['power_zone'] = np.nan
 
@@ -633,14 +683,14 @@ class FitlyActivity(stravalib.model.Activity):
             # Check if power or heartrate data
             if metric == 'power':
                 # If power data, check if run zones or ride zones should be used
-                if 'run' in self.type.lower() or 'walk' in self.type.lower():
+                if self.type and ('run' in self.type.lower() or 'walk' in self.type.lower()):
                     df_zone_intensities.at[i, 'intensity'] = 'low' if df_zone_intensities.at[
                                                                           i, 'power_zone'] in [1,
                                                                                                2] else 'med' if \
                         df_zone_intensities.at[i, 'power_zone'] == 3 else 'high' if \
                         df_zone_intensities.at[
                             i, 'power_zone'] in [4, 5] else None
-                elif 'ride' in self.type.lower():
+                elif self.type and 'ride' in self.type.lower():
                     df_zone_intensities.at[i, 'intensity'] = 'low' if df_zone_intensities.at[
                                                                           i, 'power_zone'] in [1, 2,
                                                                                                3] else 'med' if \
@@ -696,7 +746,18 @@ class FitlyActivity(stravalib.model.Activity):
                 df['athlete_id'] = self.Athlete.athlete_id
                 df['ftp'] = self.ftp
                 df.set_index(['activity_id', 'interval'], inplace=True)
-                df.to_sql('strava_best_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+
+                def _write_best_samples():
+                    # Delete any existing rows for this activity to prevent UNIQUE constraint
+                    # violations on re-runs (e.g. if a previous run partially completed)
+                    app.server.logger.debug('Activity id "{}": Acquiring DB lock for strava_best_samples ({} rows)'.format(self.id, len(df)))
+                    app.session.execute(delete(stravaBestSamples).where(stravaBestSamples.activity_id == int(self.id)))
+                    app.session.commit()
+                    app.session.remove()
+                    df.to_sql('strava_best_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+                    app.server.logger.debug('Activity id "{}": ✓ strava_best_samples written ({} rows)'.format(self.id, len(df)))
+
+                _retry_db_write(_write_best_samples)
 
     def sweatpy_cp_model(self, model='3_parameter_non_linear'):
         # Models that can be passed = '2_parameter_non_linear', '3_parameter_non_linear', 'extended_5_3','extended_7_3'
@@ -719,8 +780,20 @@ class FitlyActivity(stravalib.model.Activity):
         self.df_samples['type'] = self.type
         self.df_samples['athlete_id'] = self.Athlete.athlete_id
 
-        self.df_summary.fillna(np.nan).to_sql('strava_summary', engine, if_exists='append', index=True, method='multi', chunksize=1000)
-        self.df_samples.fillna(np.nan).to_sql('strava_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+        def _write_summary_and_samples():
+            # Delete any existing rows for this activity to prevent UNIQUE constraint
+            # violations on re-runs (e.g. if a previous run partially completed)
+            app.server.logger.debug('Activity id "{}": Acquiring DB lock for strava_summary + strava_samples ({} sample rows)'.format(self.id, len(self.df_samples)))
+            app.session.execute(delete(stravaSummary).where(stravaSummary.activity_id == int(self.id)))
+            app.session.execute(delete(stravaSamples).where(stravaSamples.activity_id == int(self.id)))
+            app.session.commit()
+            app.session.remove()
+            self.df_summary.fillna(np.nan).to_sql('strava_summary', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+            app.server.logger.debug('Activity id "{}": ✓ strava_summary written'.format(self.id))
+            self.df_samples.fillna(np.nan).to_sql('strava_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+            app.server.logger.debug('Activity id "{}": ✓ strava_samples written ({} rows)'.format(self.id, len(self.df_samples)))
+
+        _retry_db_write(_write_summary_and_samples)
 
 
 def training_workflow(min_non_warmup_workout_time, metric='hrv_baseline', athlete_id=1):
