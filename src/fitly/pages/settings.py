@@ -232,6 +232,17 @@ def generate_run_power_zone_card():
     ])
 
 
+def generate_entry_field(id, title, value, placeholder=None, input_type='text'):
+    return (
+        html.Div(className='row align-items-center mb-2 mt-2', children=[
+            html.H6(title, className='col-5 mb-0'),
+            dbc.Input(id=id + '-input', className='text-center col-5', type=input_type, bs_size="sm", value=value,
+                      placeholder=placeholder),
+            html.Div(className='col-2')
+        ])
+    )
+
+
 def athlete_card():
     athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
 
@@ -292,13 +303,18 @@ def athlete_card():
     return dbc.Card(id='athlete-card', className=color, children=[
         dbc.CardHeader(html.H4(className='text-left mb-0', children='Athlete')),
         dbc.CardBody([
-            generate_db_setting('name', 'Name', athlete_info.name),
-            generate_db_setting('birthday', 'Birthday', athlete_info.birthday, input_type='date'),
-            generate_db_setting('sex', 'Sex (M/F)', athlete_info.sex),
-            generate_db_setting('weight', 'Weight (lbs)', athlete_info.weight_lbs),
-            generate_db_setting('rest-hr', 'Resting HR', athlete_info.resting_hr),
-            generate_db_setting('ride-ftp', 'Ride FTP', athlete_info.ride_ftp),
-            generate_db_setting('run-ftp', 'Run FTP', athlete_info.run_ftp),
+            generate_entry_field('name', 'Name', athlete_info.name),
+            generate_entry_field('birthday', 'Birthday', athlete_info.birthday, input_type='date'),
+            generate_entry_field('sex', 'Sex (M/F)', athlete_info.sex),
+            generate_entry_field('weight', 'Weight (lbs)', athlete_info.weight_lbs),
+            generate_entry_field('rest-hr', 'Resting HR', athlete_info.resting_hr),
+            generate_entry_field('ride-ftp', 'Ride FTP (Watts)', athlete_info.ride_ftp),
+            generate_entry_field('run-ftp', 'Run FTP (Watts)', athlete_info.run_ftp),
+            html.Div(className='text-center mt-3 mb-2', children=[
+                dbc.Button('Upload', id='athlete-section-submit', color='secondary', size='sm', n_clicks=0),
+                html.I(id='athlete-section-status', className='fa fa-check ml-2',
+                       style={'display': 'none', 'color': 'green', 'fontSize': '150%'})
+            ]),
             html.Div(id='recovery-metric-dropdown', className='row align-items-center mb-2 mt-2',
                      children=[
                          html.H6('Recovery Metric', id='recovery-metric-label', className='col-5 mb-0'),
@@ -636,21 +652,41 @@ def update_athlete_db_value(value, value_name):
 
 
 # Callback for updating activity score goal
+# Callback for updating athlete core fields
 @app.callback([
-    Output('name-input-submit', 'style'),
-    Output('name-input-status', 'style'),
-    Output('birthday-input-submit', 'style'),
-    Output('birthday-input-status', 'style'),
-    Output('sex-input-submit', 'style'),
-    Output('sex-input-status', 'style'),
-    Output('weight-input-submit', 'style'),
-    Output('weight-input-status', 'style'),
-    Output('rest-hr-input-submit', 'style'),
-    Output('rest-hr-input-status', 'style'),
-    Output('ride-ftp-input-submit', 'style'),
-    Output('ride-ftp-input-status', 'style'),
-    Output('run-ftp-input-submit', 'style'),
-    Output('run-ftp-input-status', 'style'),
+    Output('athlete-section-status', 'style')
+], [
+    Input('athlete-section-submit', 'n_clicks')
+], [
+    State('name-input', 'value'),
+    State('birthday-input', 'value'),
+    State('sex-input', 'value'),
+    State('weight-input', 'value'),
+    State('rest-hr-input', 'value'),
+    State('ride-ftp-input', 'value'),
+    State('run-ftp-input', 'value'),
+])
+def save_athlete_section(
+    save_click, name_value, birthday_value, sex_value, weight_value, rest_hr_value, ride_ftp_value, run_ftp_value
+):
+    ctx = dash.callback_context
+    if ctx.triggered and save_click > 0:
+        success = True
+        success = success and update_athlete_db_value(name_value, 'name')
+        success = success and update_athlete_db_value(birthday_value, 'birthday')
+        success = success and update_athlete_db_value(sex_value, 'sex')
+        success = success and update_athlete_db_value(weight_value, 'weight_lbs')
+        success = success and update_athlete_db_value(rest_hr_value, 'resting_hr')
+        success = success and update_athlete_db_value(ride_ftp_value, 'ride_ftp')
+        success = success and update_athlete_db_value(run_ftp_value, 'run_ftp')
+        
+        if success:
+            return [{'display': 'inline-block', 'color': 'green', 'fontSize': '150%'}]
+    
+    return [{'display': 'none'}]
+
+
+@app.callback([
     Output('weekly-activity-score-goal-input-submit', 'style'),
     Output('weekly-activity-score-goal-input-status', 'style'),
     Output('daily-sleep-goal-input-submit', 'style'),
@@ -705,13 +741,6 @@ def update_athlete_db_value(value, value_name):
     Output('spotify-num-playlists-input-status', 'style'),
 ],
     [
-        Input('name-input-submit', 'n_clicks'),
-        Input('birthday-input-submit', 'n_clicks'),
-        Input('sex-input-submit', 'n_clicks'),
-        Input('weight-input-submit', 'n_clicks'),
-        Input('rest-hr-input-submit', 'n_clicks'),
-        Input('ride-ftp-input-submit', 'n_clicks'),
-        Input('run-ftp-input-submit', 'n_clicks'),
         Input('weekly-activity-score-goal-input-submit', 'n_clicks'),
         Input('daily-sleep-goal-input-submit', 'n_clicks'),
         Input('weekly-tss-goal-input-submit', 'n_clicks'),
@@ -740,13 +769,6 @@ def update_athlete_db_value(value, value_name):
         Input('spotify-num-playlists-input-submit', 'n_clicks'),
     ],
     [
-        State('name-input', 'value'),
-        State('birthday-input', 'value'),
-        State('sex-input', 'value'),
-        State('weight-input', 'value'),
-        State('rest-hr-input', 'value'),
-        State('ride-ftp-input', 'value'),
-        State('run-ftp-input', 'value'),
         State('weekly-activity-score-goal-input', 'value'),
         State('daily-sleep-goal-input', 'value'),
         State('weekly-tss-goal-input', 'value'),
@@ -775,20 +797,20 @@ def update_athlete_db_value(value, value_name):
         State('spotify-num-playlists-input', 'value'),
     ])
 def save_athlete_settings(
-        name_click, birthday_click, sex_click, weight_click, rest_hr_click, ride_ftp_click, run_ftp_click, wk_act_click,
+        wk_act_click,
         slp_goal_click, tss_goal_click, rrmax_click, rrmin_click, min_workout_click, workout_click,
         slp_click, rd_click, cycle_zone1_click, cycle_zone2_click, cycle_zone3_click, cycle_zone4_click,
         cycle_zone5_click, cycle_zone6_click, run_zone1_click, run_zone2_click, run_zone3_click, run_zone4_click,
         hr_zone1_click, hr_zone2_click, hr_zone3_click, hr_zone4_click, recovery_metric_click,
         spotify_time_period_dropdown_click, spotify_num_playlists_click,
-        name_value, birthday_value, sex_value, weight_value, rest_hr_value, ride_ftp_value, run_ftp_value, wk_act_value,
+        wk_act_value,
         slp_goal_value, tss_goal_value, rrmax_value, rrmin_value, min_workout_value, workout_value, slp_value, rd_value,
         cycle_zone1_value, cycle_zone2_value, cycle_zone3_value, cycle_zone4_value, cycle_zone5_value,
         cycle_zone6_value, run_zone1_value, run_zone2_value, run_zone3_value, run_zone4_value, hr_zone1_value,
         hr_zone2_value, hr_zone3_value, hr_zone4_value, recovery_metric_value, spotify_time_period_dropdown_value,
         spotify_num_playlists_value
 ):
-    num_metrics = 33
+    num_metrics = 26
     output_styles = []
     for _ in range(num_metrics):
         output_styles.extend([{'display': 'inline-block', 'border': '0px'}, {
@@ -797,14 +819,7 @@ def save_athlete_settings(
     ctx = dash.callback_context
     if ctx.triggered:
         latest = ctx.triggered[0]['prop_id'].split('.')[0]
-        latest_dict = {'name-input-submit': 'name',
-                       'birthday-input-submit': 'birthday',
-                       'sex-input-submit': 'sex',
-                       'weight-input-submit': 'weight_lbs',
-                       'rest-hr-input-submit': 'resting_hr',
-                       'ride-ftp-input-submit': 'ride_ftp',
-                       'run-ftp-input-submit': 'run_ftp',
-                       'weekly-activity-score-goal-input-submit': 'weekly_activity_score_goal',
+        latest_dict = {'weekly-activity-score-goal-input-submit': 'weekly_activity_score_goal',
                        'daily-sleep-goal-input-submit': 'daily_sleep_hr_target',
                        'weekly-tss-goal-input-submit': 'weekly_tss_goal',
                        'rr-max-goal-input-submit': 'rr_max_goal',
@@ -833,13 +848,6 @@ def save_athlete_settings(
                        }
 
         output_indexer = [
-            'name',
-            'birthday',
-            'sex',
-            'weight_lbs',
-            'resting_hr',
-            'ride_ftp',
-            'run_ftp',
             'weekly_activity_score_goal',
             'daily_sleep_hr_target',
             'weekly_tss_goal',
@@ -869,13 +877,6 @@ def save_athlete_settings(
 
         ]
         values = {
-            'name': name_value,
-            'birthday': birthday_value,
-            'sex': sex_value,
-            'weight_lbs': weight_value,
-            'resting_hr': rest_hr_value,
-            'ride_ftp': ride_ftp_value,
-            'run_ftp': run_ftp_value,
             'weekly_activity_score_goal': wk_act_value,
             'daily_sleep_hr_target': slp_goal_value,
             'weekly_tss_goal': tss_goal_value,

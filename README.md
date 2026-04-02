@@ -1,3 +1,24 @@
+# ⚠️ Important: Running on Edge Devices (Raspberry Pi)
+
+If you are deploying this project on a Raspberry Pi or similar edge hardware running off an SD card, please read this section before starting the container.
+
+Multi-threaded applications performing heavy, concurrent database writes (like pulling bulk Strava data) can easily overwhelm an SD card's limited random-write speeds. On devices with lower memory—such as the Raspberry Pi 3 (~1GB RAM)—the Linux kernel will attempt to cache database writes in RAM and flush them to the SD card all at once. This instantly causes an **I/O Wait Death Spiral**, which completely freezes the host OS, drops network traffic, and locks you out of SSH.
+
+### 1. Host Kernel Tuning (Trickle Writes)
+We provide a pre-flight script that detects low-memory host devices and automatically tunes the Linux kernel's `sysctl` settings (`vm.dirty_background_ratio` and `vm.dirty_ratio`). This forces the OS to continuously "trickle" data to the SD card rather than dumping it in large, system-crashing batches.
+
+**Before running Docker Compose, execute this script on your host machine:**
+```bash
+chmod +x init-host.sh
+./init-host.sh
+```
+### 2. Container Memory Fencing
+The included docker-compose.yml contains hardcoded resource limits (memory: '750M'). Because many lightweight OS deployments (like Alpine) have zero Swap space by default, allowing a container to consume all available RAM will trigger an Out-Of-Memory (OOM) kernel panic. This memory fence guarantees the host OS always has enough breathing room to manage network and disk I/O.
+
+### 3. SQLite Concurrency Optimizations
+
+Under the hood, the Python application initializes the SQLite database with PRAGMA journal_mode=WAL; and PRAGMA synchronous=NORMAL;. This heavily optimizes the database for multi-threaded worker pools, dramatically lowering SD card wear and eliminating micro-freezes during bulk data ingestion.
+
 # Fit.ly
 Web analytics for endurance athletes
 
@@ -265,6 +286,38 @@ nextcloud:
   password: your_password
   fitbod_path: /path/to/fitbod_export.csv
 ```
+
+---
+
+# Power & FTP
+
+Fitly determines your Functional Threshold Power (FTP) automatically using a fallback chain. You can always override it manually via the **Settings → Athlete** card.
+
+## Running FTP
+
+| Priority | Source | How it works |
+|---|---|---|
+| **1** | Stryd | If Stryd credentials are configured, FTP is pulled from the matched Stryd workout |
+| **2** | 20-minute estimate | Best 20-min power (from prior activities) × 0.95 |
+| **3** | Athlete table | The value you set manually on the Settings page (`run_ftp`) |
+
+## Cycling FTP
+
+| Priority | Source | How it works |
+|---|---|---|
+| **1** | FTP test activity | The average watts from your most recent ride whose **Strava title contains "FTP test"** (case-insensitive) × 0.95 |
+| **2** | 20-minute estimate | Best 20-min power (from prior ride activities) × 0.95 |
+| **3** | Athlete table | The value you set manually on the Settings page (`ride_ftp`) |
+
+> **Tip — Setting cycling FTP via Strava:** After completing an FTP test on the bike, make sure the Strava activity name contains the text **"FTP test"** (e.g. "Indoor FTP Test 2026", "ftp test ride"). Fitly will pick up the average watts from that activity, multiply by 0.95, and use it as your cycling FTP going forward.
+
+## Power Tab Display
+
+The **Current FTP** header on the Power tab displays the best available FTP value:
+
+- If a 20-minute best-power estimate from the last 90 days exceeds your manually-set FTP, the header shows **"Est. FTP ___ W (20min×.95)"**
+- Otherwise it shows **"Current FTP ___ W"** from the athlete table
+- The historical FTP bar chart still shows per-activity FTP values for trend accuracy
 
 ---
 
