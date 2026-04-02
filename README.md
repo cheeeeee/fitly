@@ -289,6 +289,38 @@ nextcloud:
 
 ---
 
+# Power & FTP
+
+Fitly determines your Functional Threshold Power (FTP) automatically using a fallback chain. You can always override it manually via the **Settings → Athlete** card.
+
+## Running FTP
+
+| Priority | Source | How it works |
+|---|---|---|
+| **1** | Stryd | If Stryd credentials are configured, FTP is pulled from the matched Stryd workout |
+| **2** | 20-minute estimate | Best 20-min power (from prior activities) × 0.95 |
+| **3** | Athlete table | The value you set manually on the Settings page (`run_ftp`) |
+
+## Cycling FTP
+
+| Priority | Source | How it works |
+|---|---|---|
+| **1** | FTP test activity | The average watts from your most recent ride whose **Strava title contains "FTP test"** (case-insensitive) × 0.95 |
+| **2** | 20-minute estimate | Best 20-min power (from prior ride activities) × 0.95 |
+| **3** | Athlete table | The value you set manually on the Settings page (`ride_ftp`) |
+
+> **Tip — Setting cycling FTP via Strava:** After completing an FTP test on the bike, make sure the Strava activity name contains the text **"FTP test"** (e.g. "Indoor FTP Test 2026", "ftp test ride"). Fitly will pick up the average watts from that activity, multiply by 0.95, and use it as your cycling FTP going forward.
+
+## Power Tab Display
+
+The **Current FTP** header on the Power tab displays the best available FTP value:
+
+- If a 20-minute best-power estimate from the last 90 days exceeds your manually-set FTP, the header shows **"Est. FTP ___ W (20min×.95)"**
+- Otherwise it shows **"Current FTP ___ W"** from the athlete table
+- The historical FTP bar chart still shows per-activity FTP values for trend accuracy
+
+---
+
 # Dashboard Startup
 
 1. Navigate to `http://127.0.0.1:8050/pages/settings`

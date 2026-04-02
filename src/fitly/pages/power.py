@@ -857,6 +857,7 @@ def power_curve(activity_type='ride', power_unit='mmp', last_id=None, height=400
 
 
 def create_ftp_chart(activity_type='ride', power_unit='watts'):
+    activity_type_raw = activity_type  # 'ride' or 'run' — keep original for athlete lookup
     activity_type = '%' + activity_type + '%'
 
     df_ftp = pd.read_sql(
@@ -865,6 +866,23 @@ def create_ftp_chart(activity_type='ride', power_unit='watts'):
                                                             datetime.utcnow() - relativedelta(months=12))
                                                     ).statement, con=engine,
         index_col='start_day_local')[['activity_id', 'ftp', 'weight']]
+
+    # --- Determine the "current" FTP from multiple sources ---
+    # Priority: athlete table (user-set) > 20-min best power estimate > latest activity FTP
+    athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
+    athlete_ftp = None
+    if athlete_info:
+        athlete_ftp = athlete_info.ride_ftp if activity_type_raw == 'ride' else athlete_info.run_ftp
+
+    # Estimated FTP from best 20-minute power in last 90 days: best_20min * 0.95
+    estimated_ftp = None
+    best_20min = app.session.query(func.max(stravaBestSamples.mmp)).filter(
+        stravaBestSamples.type.ilike(activity_type),
+        stravaBestSamples.interval == 1200,
+        stravaBestSamples.timestamp_local >= (datetime.now() - timedelta(days=90))
+    ).scalar()
+    if best_20min and best_20min > 0:
+        estimated_ftp = round(best_20min * 0.95)
 
     app.session.remove()
 
@@ -885,7 +903,6 @@ def create_ftp_chart(activity_type='ride', power_unit='watts'):
     df_ftp['watts_per_kg'] = df_ftp['ftp'] / (df_ftp['weight'] / 2.20462)
     metric = 'ftp' if power_unit == 'ftp' else 'watts_per_kg'
     tooltip = '<b>{:.0f} W {}' if metric == 'ftp' else '<b>{:.2f} W/kg {}'
-    title = 'Current FTP {:.0f} W (L12M)' if metric == 'ftp' else 'Current FTP {:.2f} W/kg (L12M)'
 
     df_ftp['ftp_%'] = ['{}{:.0f}%'.format('+' if x > 0 else '', x) if x != 0 else '' for x in
                        (((df_ftp[metric] - df_ftp[metric].shift(1)) / df_ftp[metric].shift(1)) * 100).fillna(0)]
@@ -895,7 +912,45 @@ def create_ftp_chart(activity_type='ride', power_unit='watts'):
 
     df_ftp = df_ftp.reset_index()
 
-    ftp_current = title.format(df_ftp.loc[df_ftp.index.max()][metric])
+    # Determine which FTP to display as "Current"
+    # Use athlete-set value if it exists and is non-default (not 300 or 0),
+    # otherwise prefer the 20-min estimate, and fall back to latest activity FTP
+    last_activity_ftp = df_ftp.loc[df_ftp.index.max()]['ftp'] if len(df_ftp) > 0 else None
+    ftp_source = 'activity'  # Track the source for the title label
+
+    if athlete_ftp and athlete_ftp > 0:
+        current_ftp_w = athlete_ftp
+        ftp_source = 'athlete'
+    elif estimated_ftp and estimated_ftp > 0:
+        current_ftp_w = estimated_ftp
+        ftp_source = 'estimated'
+    elif last_activity_ftp and last_activity_ftp > 0:
+        current_ftp_w = last_activity_ftp
+        ftp_source = 'activity'
+    else:
+        current_ftp_w = 0
+
+    # If there's a 20-min estimate that exceeds the athlete-set value, prefer the estimate
+    if estimated_ftp and athlete_ftp and estimated_ftp > athlete_ftp:
+        current_ftp_w = estimated_ftp
+        ftp_source = 'estimated'
+
+    # Build the title
+    if metric == 'ftp':
+        if ftp_source == 'estimated':
+            ftp_current = 'Est. FTP {:.0f} W (20min×.95)'.format(current_ftp_w)
+        else:
+            ftp_current = 'Current FTP {:.0f} W'.format(current_ftp_w)
+    else:
+        # watts_per_kg
+        if athlete_info and athlete_info.weight_lbs and athlete_info.weight_lbs > 0:
+            current_ftp_wkg = current_ftp_w / (athlete_info.weight_lbs * 0.453592)
+        else:
+            current_ftp_wkg = df_ftp.loc[df_ftp.index.max()][metric] if len(df_ftp) > 0 else 0
+        if ftp_source == 'estimated':
+            ftp_current = 'Est. FTP {:.2f} W/kg (20min×.95)'.format(current_ftp_wkg)
+        else:
+            ftp_current = 'Current FTP {:.2f} W/kg'.format(current_ftp_wkg)
 
     figure = {
         'data': [

@@ -271,8 +271,20 @@ class FitlyActivity(stravalib.model.Activity):
         self.weight = weight
         self.kg = weight * 0.453592
 
-    def get_ftp(
-            self):  # TODO: Update with auto calculated critical power so users do not have to flag (or take) FTP tests
+    def get_ftp(self):
+        """
+        Determine FTP for this activity.
+
+        Fallback chain (runs):
+            1. Stryd FTP (matched by timestamp)
+            2. Best 20-min power × 0.95 from prior activities
+            3. athlete.run_ftp (user-set or default)
+
+        Fallback chain (rides):
+            1. Average watts from most recent activity named 'FTP test' × 0.95
+            2. Best 20-min power × 0.95 from prior activities
+            3. athlete.ride_ftp (user-set or default)
+        """
         self.stryd_metrics = []
         if self.type and ('run' in self.type.lower() or 'walk' in self.type.lower()):
             # If stryd credentials in config, grab ftp
@@ -298,15 +310,29 @@ class FitlyActivity(stravalib.model.Activity):
                 try:
                     self.ftp = self.stryd_metrics.iloc[0].stryd_ftp
                     if self.ftp == 0:
-                        self.ftp = self.Athlete.run_ftp
+                        self.ftp = None  # fall through to estimate
                 except:
-                    # If no FTP test prior to current activity
-                    self.ftp = self.Athlete.run_ftp
-            else:
-                self.ftp = self.Athlete.run_ftp
-        elif self.type and 'ride' in self.type.lower():
-            # TODO: Switch over to using Critical Power for everything once we get the critical power model working
+                    self.ftp = None  # fall through to estimate
 
+            # Fallback: estimate from best 20-min power × 0.95 (prior activities)
+            if not self.ftp or self.ftp == 0:
+                try:
+                    best_20min = app.session.query(func.max(stravaBestSamples.mmp)).filter(
+                        stravaBestSamples.type.ilike('%run%'),
+                        stravaBestSamples.interval == 1200,
+                        stravaBestSamples.timestamp_local < self.start_date_local
+                    ).scalar()
+                    if best_20min and best_20min > 0:
+                        self.ftp = round(best_20min * 0.95)
+                except:
+                    pass
+
+            # Final fallback: athlete table
+            if not self.ftp or self.ftp == 0:
+                self.ftp = self.Athlete.run_ftp
+
+        elif self.type and 'ride' in self.type.lower():
+            # Primary: average watts from most recent ride named "FTP test" × 0.95
             try:
                 self.ftp = float(
                     app.session.query(stravaSummary.average_watts).order_by(
@@ -315,7 +341,23 @@ class FitlyActivity(stravalib.model.Activity):
                         stravaSummary.type.ilike('%ride%'),
                         stravaSummary.name.ilike('%ftp test%')).first()[0]) * .95
             except:
-                # If no FTP test prior to current activity
+                self.ftp = None  # fall through to estimate
+
+            # Fallback: estimate from best 20-min power × 0.95 (prior ride activities)
+            if not self.ftp or self.ftp == 0:
+                try:
+                    best_20min = app.session.query(func.max(stravaBestSamples.mmp)).filter(
+                        stravaBestSamples.type.ilike('%ride%'),
+                        stravaBestSamples.interval == 1200,
+                        stravaBestSamples.timestamp_local < self.start_date_local
+                    ).scalar()
+                    if best_20min and best_20min > 0:
+                        self.ftp = round(best_20min * 0.95)
+                except:
+                    pass
+
+            # Final fallback: athlete table
+            if not self.ftp or self.ftp == 0:
                 self.ftp = self.Athlete.ride_ftp
 
             app.session.remove()
