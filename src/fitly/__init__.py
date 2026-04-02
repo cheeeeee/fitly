@@ -25,7 +25,7 @@ def create_flask(config_object=f"{__package__}.settings"):
 
     return server
 
-# SQL w/ WAL
+# SQL w/ WAL - Optimized for Low-Memory Edge Devices
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
     import time
