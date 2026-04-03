@@ -16,6 +16,7 @@ from ..api.sqlalchemy_declarative import athlete, stravaSummary, stravaSamples, 
 from ..api.database import engine
 from ..utils import utc_to_local, config, oura_credentials_supplied, stryd_credentials_supplied, \
     peloton_credentials_supplied
+from ..cache import get_athlete
 from ..pages.power import power_curve, zone_chart
 import re
 
@@ -101,12 +102,11 @@ oura_low_threshold = 70
 
 
 def get_layout(**kwargs):
-    athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
+    athlete_info = get_athlete()
     pmc_switch_settings = json.loads(athlete_info.pmc_switch_settings)
     use_run_power = True if athlete_info.use_run_power else False
     use_cycle_power = True if athlete_info.use_cycle_power else False
     use_power = True if use_run_power or use_cycle_power else False
-    app.session.remove()
     return html.Div([
         # Dummy div for simultaneous callbacks on page load
         dbc.Modal(id="annotation-modal", centered=True, autoFocus=True, fade=False, backdrop='static', size='xl',
@@ -908,18 +908,26 @@ def z_recommendation_chart(hrv_z_score, hr_z_score, hrv7_z_score, hr7_z_score, h
 
 
 def get_hrv_df():
+    # Scope queries to last 400 days (60-day rolling windows need ~60 days warmup,
+    # PMC chart starts at day 42, so 400 days provides ample headroom)
+    hrv_cutoff = (datetime.now() - timedelta(days=400)).strftime('%Y-%m-%d')
+
     hrv_df = pd.read_sql(
         sql=app.session.query(ouraSleepSummary.report_date, ouraSleepSummary.summary_date, ouraSleepSummary.rmssd,
-                              ouraSleepSummary.hr_average).statement,
+                              ouraSleepSummary.hr_average).filter(
+            ouraSleepSummary.report_date >= hrv_cutoff).statement,
         con=engine, index_col='report_date').sort_index(ascending=True)
 
     # Merge readiness score
     hrv_df = hrv_df.merge(pd.read_sql(
-        sql=app.session.query(ouraReadinessSummary.report_date, ouraReadinessSummary.score).statement,
+        sql=app.session.query(ouraReadinessSummary.report_date, ouraReadinessSummary.score).filter(
+            ouraReadinessSummary.report_date >= hrv_cutoff).statement,
         con=engine, index_col='report_date'), how='left', left_index=True, right_index=True)
 
-    trimp_df = pd.read_sql(sql=app.session.query(stravaSummary.start_day_local, stravaSummary.trimp).statement,
-                           con=engine, index_col='start_day_local').sort_index(ascending=True)
+    trimp_df = pd.read_sql(
+        sql=app.session.query(stravaSummary.start_day_local, stravaSummary.trimp).filter(
+            stravaSummary.start_day_local >= hrv_cutoff).statement,
+        con=engine, index_col='start_day_local').sort_index(ascending=True)
     app.session.remove()
 
     # Calculate ln rmssd
@@ -1005,11 +1013,10 @@ def get_hrv_df():
 
 
 def get_trend_controls(selected=None, sport='run'):
-    athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
+    athlete_info = get_athlete()
     use_run_power = True if athlete_info.use_run_power else False
     use_cycle_power = True if athlete_info.use_cycle_power else False
     use_power = True if use_run_power or use_cycle_power else False
-    app.session.remove()
     metrics = {'average-watts': {'fa fa-bolt': 'Power (w)'},
                'average-heartrate': {'fa fa-heartbeat': 'Heartrate'},
                'tss': {'fa fa-tachometer-alt': 'Stress (tss)'},
@@ -1273,7 +1280,7 @@ def recommendation_color(recommendaion_desc):
 
 def create_daily_recommendations(plan_rec):
     if plan_rec:
-        recovery_metric = app.session.query(athlete).filter(athlete.athlete_id == 1).first().recovery_metric
+        recovery_metric = get_athlete().recovery_metric
         if recovery_metric == 'hrv':
             recovery_metric_label = 'HRV'
             recovery_metric_tooltip = 'Workflow steps based on daily rmssd changes within 60 day mean +/- 1.5 stdev'
@@ -2050,7 +2057,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
     if len(df_summary) == 0:
         return {'data': [], 'layout': go.Layout(title='No Data Found')}
 
-    athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
+    athlete_info = get_athlete()
     rr_max_threshold = athlete_info.rr_max_goal
     rr_min_threshold = athlete_info.rr_min_goal
 
@@ -3313,6 +3320,7 @@ def refresh_fitness_chart(ride_switch, run_switch, all_switch, power_switch, hr_
                 app.server.logger.error(f'Failed to save PMC switch settings: {e}')
                 break
     app.session.remove()
+    get_athlete.cache_clear()  # Invalidate cached athlete after update
 
     pmc_figure, hoverData = create_fitness_chart(ride_status=ride_status, run_status=run_status,
                                                  all_status=all_status, power_status=power_status, hr_status=hr_status,

@@ -420,52 +420,44 @@ def power_curve(activity_type='ride', power_unit='mmp', last_id=None, height=400
     # 30 second intervals for everything after 20 mins
     interval_lengths += [i for i in range(1230, (int(math.floor(max_interval / 10.0)) * 10) + 1, 30)]
 
-    all_best_interval_df = pd.read_sql(
+    # ── Consolidated query: pull ALL raw best-sample records in one DB round-trip ──
+    # Previously 4 separate GROUP BY queries (All/L90D/L6W/L30D) hit the DB.
+    # Now we fetch raw rows once and aggregate per time window in pandas.
+    _raw_best = pd.read_sql(
         sql=app.session.query(
-            func.max(stravaBestSamples.mmp).label('mmp'),
-            stravaBestSamples.activity_id, stravaBestSamples.interval, stravaBestSamples.time_interval,
-            stravaBestSamples.date, stravaBestSamples.timestamp_local, stravaBestSamples.watts_per_kg,
-        ).group_by(stravaBestSamples.interval).filter(stravaBestSamples.interval.in_(interval_lengths),
-                                                      stravaBestSamples.type.ilike(activity_type)).statement,
-        con=engine, index_col='interval')
-    all_best_interval_df['act_name'] = all_best_interval_df['activity_id'].map(act_dict['act_name'])
-
-    L90D_best_interval_df = pd.read_sql(
-        sql=app.session.query(
-            func.max(stravaBestSamples.mmp).label('mmp'), stravaBestSamples.activity_id, stravaBestSamples.ftp,
+            stravaBestSamples.mmp, stravaBestSamples.activity_id, stravaBestSamples.ftp,
             stravaBestSamples.interval, stravaBestSamples.time_interval,
             stravaBestSamples.date, stravaBestSamples.timestamp_local, stravaBestSamples.watts_per_kg,
-        ).group_by(stravaBestSamples.interval).filter(stravaBestSamples.interval.in_(interval_lengths),
-                                                      stravaBestSamples.type.ilike(activity_type),
-                                                      stravaBestSamples.timestamp_local >= (
-                                                              datetime.now() - timedelta(days=90))
-                                                      ).statement, con=engine, index_col='interval')
+        ).filter(stravaBestSamples.interval.in_(interval_lengths),
+                 stravaBestSamples.type.ilike(activity_type)).statement,
+        con=engine)
 
-    L90D_best_interval_df['act_name'] = L90D_best_interval_df['activity_id'].map(act_dict['act_name'])
+    def _best_per_interval(df):
+        """For each interval, keep the row with the highest mmp."""
+        if len(df) == 0:
+            return df
+        idx = df.groupby('interval')['mmp'].idxmax()
+        result = df.loc[idx].set_index('interval')
+        result['act_name'] = result['activity_id'].map(act_dict['act_name'])
+        return result
 
-    L6W_best_interval_df = pd.read_sql(
-        sql=app.session.query(
-            func.max(stravaBestSamples.mmp).label('mmp'), stravaBestSamples.activity_id,
-            stravaBestSamples.interval, stravaBestSamples.time_interval,
-            stravaBestSamples.date, stravaBestSamples.timestamp_local, stravaBestSamples.watts_per_kg,
-        ).group_by(stravaBestSamples.interval).filter(stravaBestSamples.interval.in_(interval_lengths),
-                                                      stravaBestSamples.type.ilike(activity_type),
-                                                      stravaBestSamples.timestamp_local >= (
-                                                              datetime.now() - timedelta(days=42))
-                                                      ).statement, con=engine, index_col='interval')
-    L6W_best_interval_df['act_name'] = L6W_best_interval_df['activity_id'].map(act_dict['act_name'])
+    # All time
+    all_best_interval_df = _best_per_interval(_raw_best)
 
-    L30D_best_interval_df = pd.read_sql(
-        sql=app.session.query(
-            func.max(stravaBestSamples.mmp).label('mmp'), stravaBestSamples.activity_id,
-            stravaBestSamples.interval, stravaBestSamples.time_interval,
-            stravaBestSamples.date, stravaBestSamples.timestamp_local, stravaBestSamples.watts_per_kg,
-        ).group_by(stravaBestSamples.interval).filter(stravaBestSamples.interval.in_(interval_lengths),
-                                                      stravaBestSamples.type.ilike(activity_type),
-                                                      stravaBestSamples.timestamp_local >= (
-                                                              datetime.now() - timedelta(days=30))
-                                                      ).statement, con=engine, index_col='interval')
-    L30D_best_interval_df['act_name'] = L30D_best_interval_df['activity_id'].map(act_dict['act_name'])
+    # Last 90 days
+    _cutoff_90 = datetime.now() - timedelta(days=90)
+    L90D_best_interval_df = _best_per_interval(
+        _raw_best[_raw_best['timestamp_local'] >= _cutoff_90])
+
+    # Last 6 weeks
+    _cutoff_42 = datetime.now() - timedelta(days=42)
+    L6W_best_interval_df = _best_per_interval(
+        _raw_best[_raw_best['timestamp_local'] >= _cutoff_42])
+
+    # Last 30 days
+    _cutoff_30 = datetime.now() - timedelta(days=30)
+    L30D_best_interval_df = _best_per_interval(
+        _raw_best[_raw_best['timestamp_local'] >= _cutoff_30])
 
     if last_id:
         recent_best_interval_df = pd.read_sql(
@@ -480,54 +472,27 @@ def power_curve(activity_type='ride', power_unit='mmp', last_id=None, height=400
 
     if time_comparison:
         if intensity == 'all':
-            time_comparison_best_interval_df = pd.read_sql(
-                sql=app.session.query(
-                    func.max(stravaBestSamples.mmp).label('mmp'), stravaBestSamples.activity_id, stravaBestSamples.ftp,
-                    stravaBestSamples.interval, stravaBestSamples.time_interval,
-                    stravaBestSamples.date, stravaBestSamples.timestamp_local, stravaBestSamples.watts_per_kg,
-                ).group_by(stravaBestSamples.interval).filter(stravaBestSamples.interval.in_(interval_lengths),
-                                                              stravaBestSamples.type.ilike(activity_type),
-                                                              stravaBestSamples.timestamp_local >= (
-                                                                      datetime.now() - timedelta(days=time_comparison))
-                                                              ).statement, con=engine, index_col='interval')
-            time_comparison_best_interval_df['act_name'] = time_comparison_best_interval_df['activity_id'].map(
-                act_dict['act_name'])
+            # Reuse pre-fetched _raw_best — no extra SQL query needed
+            _cutoff_tc = datetime.now() - timedelta(days=time_comparison)
+            time_comparison_best_interval_df = _best_per_interval(
+                _raw_best[_raw_best['timestamp_local'] >= _cutoff_tc])
         else:
-            # Join in intensity data from strava summary
-
-            pd.read_sql(
-                sql=app.session.query(stravaSummary.activity_id, stravaSummary.workout_intensity).statement,
+            # Intensity filter requires join to stravaSummary — separate query needed
+            intensity_df = pd.read_sql(
+                sql=app.session.query(stravaSummary.activity_id, stravaSummary.workout_intensity).filter(
+                    stravaSummary.workout_intensity == intensity).statement,
                 con=engine)
+            intensity_ids = set(intensity_df['activity_id'])
 
-            time_comparison_best_interval_df = pd.read_sql(
-                sql=app.session.query(
-                    func.max(stravaBestSamples.mmp).label('mmp'), stravaBestSamples.activity_id, stravaBestSamples.ftp,
-                    stravaBestSamples.interval, stravaBestSamples.time_interval,
-                    stravaBestSamples.date, stravaBestSamples.timestamp_local, stravaBestSamples.watts_per_kg,
-                ).join(stravaSummary, stravaBestSamples.activity_id == stravaSummary.activity_id,
-                       isouter=True).group_by(stravaBestSamples.interval).filter(
-                    stravaSummary.workout_intensity == intensity,
-                    stravaBestSamples.interval.in_(interval_lengths),
-                    stravaBestSamples.type.ilike(activity_type),
-                    stravaBestSamples.timestamp_local >= (
-                            datetime.now() - timedelta(days=time_comparison))
-                ).statement, con=engine, index_col='interval')
-            time_comparison_best_interval_df['act_name'] = time_comparison_best_interval_df['activity_id'].map(
-                act_dict['act_name'])
+            # Filter _raw_best by intensity-matching activity IDs
+            _intensity_best = _raw_best[_raw_best['activity_id'].isin(intensity_ids)]
 
-            all_best_interval_df = pd.read_sql(
-                sql=app.session.query(
-                    func.max(stravaBestSamples.mmp).label('mmp'), stravaBestSamples.activity_id, stravaBestSamples.ftp,
-                    stravaBestSamples.interval, stravaBestSamples.time_interval,
-                    stravaBestSamples.date, stravaBestSamples.timestamp_local, stravaBestSamples.watts_per_kg,
-                ).join(stravaSummary, stravaBestSamples.activity_id == stravaSummary.activity_id,
-                       isouter=True).group_by(stravaBestSamples.interval).filter(
-                    stravaSummary.workout_intensity == intensity,
-                    stravaBestSamples.interval.in_(interval_lengths),
-                    stravaBestSamples.type.ilike(activity_type)
-                ).statement, con=engine, index_col='interval')
-            all_best_interval_df['act_name'] = all_best_interval_df['activity_id'].map(
-                act_dict['act_name'])
+            _cutoff_tc = datetime.now() - timedelta(days=time_comparison)
+            time_comparison_best_interval_df = _best_per_interval(
+                _intensity_best[_intensity_best['timestamp_local'] >= _cutoff_tc])
+
+            # Override all_best with intensity-filtered version
+            all_best_interval_df = _best_per_interval(_intensity_best)
 
     app.session.remove()
 
