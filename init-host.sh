@@ -190,6 +190,17 @@ else
     SERVER_TIMEOUT=1200
 fi
 
+# LAN IP Detection — used to build correct OAuth redirect URIs
+LAN_IP="127.0.0.1"
+if _has_cmd ip; then
+    _detected_ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -1)
+    [ -n "$_detected_ip" ] && LAN_IP="$_detected_ip"
+elif _has_cmd hostname; then
+    _detected_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [ -n "$_detected_ip" ] && LAN_IP="$_detected_ip"
+fi
+echo "  LAN IP:     ${LAN_IP}"
+
 echo ""
 echo "  Recommended settings derived from hardware:"
 echo "    gunicorn_workers:  ${RECOMMENDED_WORKERS}"
@@ -290,12 +301,19 @@ echo "  We'll now collect values for your config."
 echo "  Press Enter to accept the suggested default shown in [brackets]."
 echo ""
 
+# --- Docker port (external) ---
+DOCKER_PORT=$(_prompt "Docker host port for Fitly (e.g. 8050)" "8050")
+CALLBACK_BASE="http://${LAN_IP}:${DOCKER_PORT}"
+echo "" >&2
+echo "  OAuth redirect base URL: ${CALLBACK_BASE}" >&2
+echo "  (All integrations will use this for redirect URIs)" >&2
+
 # --- Strava (required) ---
 echo "" >&2
 echo "┌─ Strava (required) ────────────────────────────────────────" >&2
 echo "│  Strava is the primary source for workout data." >&2
 echo "│  Create an API app at: https://www.strava.com/settings/api" >&2
-echo "│  Set callback URL to:  127.0.0.1:8050?strava" >&2
+echo "│  Set callback domain to: ${LAN_IP}" >&2
 echo "└────────────────────────────────────────────────────────────" >&2
 STRAVA_CLIENT_ID=$(_prompt "Strava API client ID" "")
 STRAVA_CLIENT_SECRET=$(_prompt "Strava API client secret" "")
@@ -317,7 +335,7 @@ echo "" >&2
 echo "┌─ Oura Ring (optional — leave blank to skip) ─────────────" >&2
 echo "│  Powers the home page and HRV-based readiness analytics." >&2
 echo "│  Create an app at: https://cloud.ouraring.com/oauth/applications" >&2
-echo "│  Set redirect URI:  http://127.0.0.1:8050/settings?oura" >&2
+echo "│  Set redirect URI:  ${CALLBACK_BASE}/settings?oura" >&2
 echo "└────────────────────────────────────────────────────────────" >&2
 OURA_CLIENT_ID=$(_prompt "Oura API client ID" "")
 OURA_CLIENT_SECRET=$(_prompt "Oura API client secret" "")
@@ -328,11 +346,11 @@ echo "" >&2
 echo "┌─ Spotify (optional — leave blank to skip) ───────────────" >&2
 echo "│  Tracks listening behavior and generates workout playlists." >&2
 echo "│  Create an app at: https://developer.spotify.com/dashboard/" >&2
-echo "│  Set redirect URI:  http://127.0.0.1:8050/settings?spotify" >&2
+echo "│  Set redirect URI:  ${CALLBACK_BASE}/settings?spotify" >&2
 echo "└────────────────────────────────────────────────────────────" >&2
 SPOTIFY_CLIENT_ID=$(_prompt "Spotify API client ID" "")
 SPOTIFY_CLIENT_SECRET=$(_prompt "Spotify API client secret" "")
-SPOTIFY_REDIRECT=$(_prompt "Spotify redirect URI" "http://127.0.0.1:8050/settings?spotify")
+SPOTIFY_REDIRECT=$(_prompt "Spotify redirect URI" "${CALLBACK_BASE}/settings?spotify")
 
 # --- Peloton ---
 echo "" >&2
@@ -348,7 +366,7 @@ echo "" >&2
 echo "┌─ Withings (optional — leave blank to skip) ──────────────" >&2
 echo "│  Body weight and body fat data for performance analytics." >&2
 echo "│  Create an app at: https://account.withings.com/partner/dashboard_oauth2" >&2
-echo "│  Set redirect URI:  http://127.0.0.1:8050/settings?withings" >&2
+echo "│  Set redirect URI:  ${CALLBACK_BASE}/settings?withings" >&2
 echo "└────────────────────────────────────────────────────────────" >&2
 WITHINGS_CLIENT_ID=$(_prompt "Withings API client ID" "")
 WITHINGS_CLIENT_SECRET=$(_prompt "Withings API client secret" "")
@@ -458,10 +476,10 @@ strava:
   activities_after_date: "${STRAVA_AFTER_DATE}"
   client_id: "${STRAVA_CLIENT_ID}"
   client_secret: "${STRAVA_CLIENT_SECRET}"
-  redirect_uri: "http://127.0.0.1:8050/settings?strava"
+  redirect_uri: "${CALLBACK_BASE}/settings?strava"
 
 oura:
-  redirect_uri: "http://127.0.0.1:8050/settings?oura"
+  redirect_uri: "${CALLBACK_BASE}/settings?oura"
   client_id: "${OURA_CLIENT_ID}"
   client_secret: "${OURA_CLIENT_SECRET}"
   days_back: ${OURA_DAYS_BACK}
@@ -472,7 +490,7 @@ oura:
   orange: "rgb(234, 109, 95)"
 
 withings:
-  redirect_uri: "http://127.0.0.1:8050/settings?withings"
+  redirect_uri: "${CALLBACK_BASE}/settings?withings"
   client_id: "${WITHINGS_CLIENT_ID}"
   client_secret: "${WITHINGS_CLIENT_SECRET}"
 
