@@ -344,6 +344,14 @@ def stryd_training_distributions():
 
 def power_curve(activity_type='ride', power_unit='mmp', last_id=None, height=400, time_comparison=None,
                 intensity='all'):
+    # ── Result cache: avoid recomputing on rapid button clicks ──
+    import time as _time
+    _cache_key = (activity_type, power_unit, last_id, height, time_comparison, intensity)
+    if hasattr(power_curve, '_cache'):
+        _ck, _ct, _cr = power_curve._cache
+        if _ck == _cache_key and (_time.time() - _ct) < 120:
+            return _cr
+
     # TODO: Add power curve model once sweatpy has been finished
     # https://sweatpy.gssns.io/features/Power%20duration%20modelling/#comparison-of-power-duration-models
     activity_type = '%' + activity_type + '%'
@@ -818,6 +826,8 @@ def power_curve(activity_type='ride', power_unit='mmp', last_id=None, height=400
     #         showlegend=False
     #     ))
 
+    # Store in cache for rapid subsequent calls
+    power_curve._cache = (_cache_key, _time.time(), figure)
     return figure  # , hoverData
 
 
@@ -978,19 +988,23 @@ def zone_chart(activity_id=None, sport='run', metrics=['power_zone', 'hr_zone'],
     else:
         if intensity == 'all':
             df_samples = pd.read_sql(
-                sql=app.session.query(stravaSamples).filter(stravaSamples.type.like(sport),
-                                                            stravaSamples.timestamp_local >= (
-                                                                    datetime.now() - timedelta(
-                                                                days=days))).statement,
+                sql=app.session.query(
+                    stravaSamples.timestamp_local, stravaSamples.activity_id,
+                    stravaSamples.type, stravaSamples.power_zone, stravaSamples.hr_zone,
+                ).filter(stravaSamples.type.like(sport),
+                         stravaSamples.timestamp_local >= (
+                                 datetime.now() - timedelta(days=days))).statement,
                 con=engine,
                 index_col=['timestamp_local'])
         else:
             # Join intensity from strava summary to samples and filter on intensity if passed as an argument
             df_samples = pd.read_sql(
-                sql=app.session.query(stravaSamples).filter(stravaSamples.type.like(sport),
-                                                            stravaSamples.timestamp_local >= (
-                                                                    datetime.now() - timedelta(
-                                                                days=days))).statement,
+                sql=app.session.query(
+                    stravaSamples.timestamp_local, stravaSamples.activity_id,
+                    stravaSamples.type, stravaSamples.power_zone, stravaSamples.hr_zone,
+                ).filter(stravaSamples.type.like(sport),
+                         stravaSamples.timestamp_local >= (
+                                 datetime.now() - timedelta(days=days))).statement,
                 con=engine,
                 index_col=['timestamp_local'])
             df_samples = df_samples.merge(pd.read_sql(
