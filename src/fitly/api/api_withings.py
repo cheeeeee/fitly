@@ -3,7 +3,6 @@ from withings_api.common import get_measure_value, MeasureType, Credentials, Cre
 from ..api.sqlalchemy_declarative import apiTokens, withings
 from ..api.database import engine
 from sqlalchemy import func, delete
-from .fitlyAPI import _retry_db_write
 from datetime import datetime
 import ast
 import pandas as pd
@@ -25,14 +24,11 @@ except Exception:
 
 def save_withings_token(credentials: CredentialsType) -> None:
     app.server.logger.debug('***** ATTEMPTING TO SAVE TOKENS *****')
-    def _save_token():
-        # Delete current tokens
-        app.session.execute(delete(apiTokens).where(apiTokens.service == 'Withings'))
-        # Insert new tokens
-        app.session.add(apiTokens(date_utc=datetime.utcnow(), service='Withings', tokens=pickle.dumps(credentials)))
-        app.session.commit()
-    
-    _retry_db_write(_save_token)
+    # Delete current tokens
+    app.session.execute(delete(apiTokens).where(apiTokens.service == 'Withings'))
+    # Insert new tokens
+    app.session.add(apiTokens(date_utc=datetime.utcnow(), service='Withings', tokens=pickle.dumps(credentials)))
+    app.session.commit()
 
     app.session.remove()
     app.server.logger.debug('***** SAVED TOKENS *****')
@@ -103,4 +99,4 @@ def pull_withings_data():
         df = df[(df.index > withings_max_date) & (~np.isnan(df['weight'])) & (~np.isnan(df['fat_ratio']))]
         if len(df) > 0:
             app.server.logger.info('New withings measurements found!')
-            _retry_db_write(lambda: df.to_sql('withings', engine, if_exists='append', index=True, method='multi', chunksize=32))
+            df.to_sql('withings', engine, if_exists='append', index=True)
