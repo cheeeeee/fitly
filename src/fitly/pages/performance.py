@@ -2268,8 +2268,11 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
     actual = pmd[:len(pmd) - forecast_days]
     forecast = pmd[-forecast_days:]
     # Start chart at first point where CTL exists (Start+42 days)
-    pmd = pmd[42:]
-    actual = actual[42:]
+    # Only trim the warmup period if we have enough historical data;
+    # otherwise new users lose their first 6 weeks of data entirely
+    if len(pmd) > 90:
+        pmd = pmd[42:]
+        actual = actual[42:]
     if oura_credentials_supplied:
         # Merge hrv data into actual df
         actual = actual.merge(hrv_df, how='left', left_index=True, right_index=True)
