@@ -18,6 +18,64 @@ from ..utils import utc_to_local, config, oura_credentials_supplied, stryd_crede
     peloton_credentials_supplied
 from ..pages.power import power_curve, zone_chart
 import re
+
+# ── LTTB Downsampling ────────────────────────────────────────────────
+# Largest-Triangle-Three-Buckets: preserves visual shape of dense time-series
+# while drastically reducing point count.  Zero external dependencies.
+LTTB_THRESHOLD = 500  # Only downsample if point count exceeds this
+
+
+def lttb_downsample(x, y, n_out):
+    """Downsample (x, y) arrays to n_out points using LTTB.
+
+    Args:
+        x: 1-D array-like (e.g. time axis)
+        y: 1-D array-like (e.g. metric values)
+        n_out: desired number of output points
+
+    Returns:
+        (x_ds, y_ds) – downsampled numpy arrays
+    """
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    n = len(x)
+    if n_out >= n or n_out < 3:
+        return x, y
+
+    # Always keep first and last points
+    selected = np.zeros(n_out, dtype=np.int64)
+    selected[0] = 0
+    selected[n_out - 1] = n - 1
+
+    bucket_size = (n - 2) / (n_out - 2)
+    a = 0  # index of previously selected point
+
+    for i in range(1, n_out - 1):
+        # Determine the bucket range
+        bucket_start = int(np.floor((i - 1) * bucket_size)) + 1
+        bucket_end = int(np.floor(i * bucket_size)) + 1
+        bucket_end = min(bucket_end, n)
+
+        # Average of *next* bucket (used as the "third" point of the triangle)
+        next_start = int(np.floor(i * bucket_size)) + 1
+        next_end = int(np.floor((i + 1) * bucket_size)) + 1
+        next_end = min(next_end, n)
+        avg_x = np.mean(x[next_start:next_end])
+        avg_y = np.mean(y[next_start:next_end])
+
+        # Find the point in this bucket that forms the largest triangle
+        max_area = -1.0
+        max_idx = bucket_start
+        for j in range(bucket_start, bucket_end):
+            area = abs((x[a] - avg_x) * (y[j] - y[a]) - (x[a] - x[j]) * (avg_y - y[a]))
+            if area > max_area:
+                max_area = area
+                max_idx = j
+
+        selected[i] = max_idx
+        a = max_idx
+
+    return x[selected], y[selected]
 import json
 import operator
 import scipy
@@ -1977,8 +2035,17 @@ def get_workout_types(df_summary, run_status, ride_status, all_status):
 
 
 def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_status, atl_status):
-    df_summary = pd.read_sql(sql=app.session.query(stravaSummary).statement, con=engine,
-                             index_col='start_date_local').sort_index(ascending=True)
+    # Only select needed columns instead of entire table (reduces I/O and serialization)
+    df_summary = pd.read_sql(
+        sql=app.session.query(
+            stravaSummary.start_date_local, stravaSummary.name, stravaSummary.type,
+            stravaSummary.elapsed_time, stravaSummary.distance, stravaSummary.moving_time,
+            stravaSummary.tss, stravaSummary.hrss, stravaSummary.trimp, stravaSummary.ftp,
+            stravaSummary.low_intensity_seconds, stravaSummary.mod_intensity_seconds,
+            stravaSummary.high_intensity_seconds, stravaSummary.max_watts,
+            stravaSummary.workout_intensity, stravaSummary.activity_id,
+        ).statement, con=engine,
+        index_col='start_date_local').sort_index(ascending=True)
                              
     if len(df_summary) == 0:
         return {'data': [], 'layout': go.Layout(title='No Data Found')}
@@ -2095,37 +2162,37 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
 
     # Sample to daily level and sum stress scores to aggregate multiple workouts per day
     if not atl_status:
-        atl_df = df_summary
-        atl_df.at[~atl_df['type'].isin(workout_types), 'stress_score'] = 0
-        atl_df.at[~atl_df['type'].isin(workout_types), 'tss'] = 0
-        atl_df.at[~atl_df['type'].isin(workout_types), 'hrss'] = 0
+        atl_df = df_summary.copy()
+        atl_df.loc[~atl_df['type'].isin(workout_types), 'stress_score'] = 0
+        atl_df.loc[~atl_df['type'].isin(workout_types), 'tss'] = 0
+        atl_df.loc[~atl_df['type'].isin(workout_types), 'hrss'] = 0
         atl_df = atl_df[['stress_score', 'tss', 'hrss']].resample('D').sum()
     else:
         atl_df = df_summary[['stress_score', 'tss', 'hrss']].resample('D').sum()
 
-    atl_df['ATL'] = np.nan
-    atl_df['ATL'].iloc[0] = (atl_df['stress_score'].iloc[0] * (1 - atl_exp)) + (initial_atl * atl_exp)
-    for i in range(1, len(atl_df)):
-        atl_df['ATL'].iloc[i] = (atl_df['stress_score'].iloc[i] * (1 - atl_exp)) + (atl_df['ATL'].iloc[i - 1] * atl_exp)
-    atl_df['atl_tooltip'] = ['Fatigue: <b>{:.1f} ({}{:.1f})</b>'.format(x, '+' if x - y > 0 else '', x - y) for (x, y)
-                             in zip(atl_df['ATL'], atl_df['ATL'].shift(1))]
+    # Vectorized ATL: exponentially weighted moving average (replaces Python for-loop)
+    atl_df['ATL'] = atl_df['stress_score'].ewm(span=atl_days, adjust=False).mean()
+    atl_prev = atl_df['ATL'].shift(1)
+    atl_delta = atl_df['ATL'] - atl_prev
+    atl_df['atl_tooltip'] = (
+        'Fatigue: <b>' + atl_df['ATL'].round(1).astype(str) +
+        ' (' + np.where(atl_delta > 0, '+', '') + atl_delta.round(1).astype(str) + ')</b>'
+    )
 
     atl_df = atl_df.drop(columns=['stress_score', 'tss', 'hrss'])
 
     # Sample to daily level and sum stress scores to aggregate multiple workouts per day
 
-    pmd = df_summary[df_summary['type'].isin(workout_types)]
+    pmd = df_summary[df_summary['type'].isin(workout_types)].copy()
     # Make sure df goes to same max date as ATL df
-    pmd.at[atl_df.index.max(), 'name'] = None
+    pmd.loc[atl_df.index.max(), 'name'] = None
 
     pmd = pmd[
         ['stress_score', 'tss', 'hrss', 'low_intensity_seconds', 'mod_intensity_seconds', 'high_intensity_seconds',
          'tss_flag']].resample('D').sum()
 
-    pmd['CTL'] = np.nan
-    pmd['CTL'].iloc[0] = (pmd['stress_score'].iloc[0] * (1 - ctl_exp)) + (initial_ctl * ctl_exp)
-    for i in range(1, len(pmd)):
-        pmd['CTL'].iloc[i] = (pmd['stress_score'].iloc[i] * (1 - ctl_exp)) + (pmd['CTL'].iloc[i - 1] * ctl_exp)
+    # Vectorized CTL: exponentially weighted moving average (replaces Python for-loop)
+    pmd['CTL'] = pmd['stress_score'].ewm(span=ctl_days, adjust=False).mean()
 
     # Merge pmd into ATL df
     pmd = pmd.merge(atl_df, how='right', right_index=True, left_index=True)
@@ -2139,22 +2206,30 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
     pmd['TSB'] = pmd['CTL'].shift(1) - pmd['ATL'].shift(1)
     pmd['Ramp_Rate'] = pmd['CTL'] - pmd['CTL'].shift(7)
 
-    # Tooltips
-    pmd['ctl_tooltip'] = ['Fitness: <b>{:.1f} ({}{:.1f})</b>'.format(x, '+' if x - y > 0 else '', x - y) for (x, y)
-                          in
-                          zip(pmd['CTL'], pmd['CTL'].shift(1))]
+    # Vectorized tooltips (replaces Python list comprehensions)
+    ctl_prev = pmd['CTL'].shift(1)
+    ctl_delta = pmd['CTL'] - ctl_prev
+    pmd['ctl_tooltip'] = (
+        'Fitness: <b>' + pmd['CTL'].round(1).astype(str) +
+        ' (' + np.where(ctl_delta > 0, '+', '') + ctl_delta.round(1).astype(str) + ')</b>'
+    )
 
-    pmd['tsb_tooltip'] = ['Form: <b>{} {:.1f} ({}{:.1f})</b>'.format(x, y, '+' if y - z > 0 else '', y - z) for
-                          (x, y, z) in
-                          zip(pmd['TSB'].map(training_zone), pmd['TSB'], pmd['TSB'].shift(1))]
+    tsb_prev = pmd['TSB'].shift(1)
+    tsb_delta = pmd['TSB'] - tsb_prev
+    pmd['tsb_tooltip'] = (
+        'Form: <b>' + pmd['TSB'].map(training_zone).astype(str) + ' ' +
+        pmd['TSB'].round(1).astype(str) +
+        ' (' + np.where(tsb_delta > 0, '+', '') + tsb_delta.round(1).astype(str) + ')</b>'
+    )
 
     if not use_power:
-        pmd['stress_tooltip'] = ['TRIMP:  <b>{:.1f}</b>'.format(x) for x in pmd['stress_score']]
+        pmd['stress_tooltip'] = 'TRIMP:  <b>' + pmd['stress_score'].round(1).astype(str) + '</b>'
     else:
-        pmd['stress_tooltip'] = [
-            'Stress: <b>{:.1f}</b><br><br>PSS: <b>{:.1f}</b><br>HRSS: <b>{:.1f}</b>'.format(x, y, z)
-            for
-            (x, y, z) in zip(pmd['stress_score'], pmd['tss'], pmd['hrss'])]
+        pmd['stress_tooltip'] = (
+            'Stress: <b>' + pmd['stress_score'].round(1).astype(str) + '</b><br><br>PSS: <b>' +
+            pmd['tss'].round(1).astype(str) + '</b><br>HRSS: <b>' +
+            pmd['hrss'].round(1).astype(str) + '</b>'
+        )
 
     # split actuals and forecasts into separata dataframes to plot lines
     actual = pmd[:len(pmd) - forecast_days]
@@ -2233,7 +2308,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
 
     figure = {
         'data': [
-            go.Scatter(
+            go.Scattergl(
                 name='Fitness (CTL)',
                 x=actual.index,
                 y=round(actual['CTL'], 1),
@@ -2241,9 +2316,9 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                 text=actual['ctl_tooltip'],
                 hoverinfo='text',
                 opacity=0.7,
-                line={'shape': 'spline', 'color': ctl_color},
+                line={'color': ctl_color},
             ),
-            go.Scatter(
+            go.Scattergl(
                 name='Fitness (CTL) Forecast',
                 x=forecast.index,
                 y=round(forecast['CTL'], 1),
@@ -2251,10 +2326,10 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                 text=forecast['ctl_tooltip'],
                 hoverinfo='text',
                 opacity=0.7,
-                line={'shape': 'spline', 'color': ctl_color, 'dash': 'dot'},
+                line={'color': ctl_color, 'dash': 'dot'},
                 showlegend=False,
             ),
-            go.Scatter(
+            go.Scattergl(
                 name='Fatigue (ATL)',
                 x=actual.index,
                 y=round(actual['ATL'], 1),
@@ -2263,7 +2338,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                 hoverinfo='text',
                 line={'color': atl_color},
             ),
-            go.Scatter(
+            go.Scattergl(
                 name='Fatigue (ATL) Forecast',
                 x=forecast.index,
                 y=round(forecast['ATL'], 1),
@@ -2314,141 +2389,44 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                 y=actual['l90d_percent_high_intensity'],
                 mode='markers',
                 yaxis='y4',
-                text=['L90D % High Intensity:<b> {:.0f}%'.format(x * 100) for x in
-                      actual['l90d_percent_high_intensity']],
+                text='L90D % High Intensity:<b> ' + (actual['l90d_percent_high_intensity'] * 100).round(0).astype(str) + '%',
                 hoverinfo='text',
                 marker=dict(
-                    color=['rgba(250, 47, 76,.7)' if actual.at[
-                                                         i, 'l90d_percent_high_intensity'] > .2 else light_blue
-                           for i in actual.index],
+                    color=np.where(actual['l90d_percent_high_intensity'] > .2,
+                                   'rgba(250, 47, 76,.7)', light_blue).tolist(),
                 )
 
             ),
 
-            go.Scatter(
-                name='80/20 Threshold',
-                text=['80/20 Threshold' if x == pmd.index.max() else '' for x in
-                      pmd.index],
-                textposition='top left',
-                x=pmd.index,
-                y=[.2 for x in pmd.index],
-                yaxis='y4',
-                mode='lines+text',
-                hoverinfo='none',
-                line={'dash': 'dashdot',
-                      'color': 'rgba(250, 47, 76,.5)'},
-                showlegend=False,
-            ),
-
+            # Ramp Rate (hidden trace for hoverData)
             go.Scatter(
                 name='Ramp Rate',
                 x=pmd.index,
                 y=pmd['Ramp_Rate'],
-                text=['Ramp Rate: {:.1f}'.format(x) for x in pmd['Ramp_Rate']],
+                text='Ramp Rate: ' + pmd['Ramp_Rate'].round(1).astype(str),
                 mode='lines',
                 hoverinfo='none',
                 line={'color': 'rgba(220,220,220,0)'},
-                # visible='legendonly',
             ),
 
+            # Hidden traces for hoverData KPI extraction
             go.Scatter(
                 name='Ramp Rate (High)',
-                x=pmd.index,
-                y=[rr_max_threshold for x in pmd.index],
-                text=['RR High' for x in pmd['Ramp_Rate']],
+                x=[pmd.index.min(), pmd.index.max()],
+                y=[rr_max_threshold, rr_max_threshold],
+                text=['RR High', 'RR High'],
                 mode='lines',
                 hoverinfo='none',
                 line={'color': 'rgba(220,220,220,0)'},
-                # visible='legendonly',
             ),
             go.Scatter(
                 name='Ramp Rate (Low)',
-                x=pmd.index,
-                y=[rr_min_threshold for x in pmd.index],
-                text=['RR Low' for x in pmd['Ramp_Rate']],
+                x=[pmd.index.min(), pmd.index.max()],
+                y=[rr_min_threshold, rr_min_threshold],
+                text=['RR Low', 'RR Low'],
                 mode='lines',
                 hoverinfo='none',
                 line={'color': 'rgba(220,220,220,0)'},
-                # visible='legendonly',
-            ),
-
-            go.Scatter(
-                name='No Fitness',
-                text=['No Fitness' if x == pmd.index.max() else '' for x in
-                      pmd.index],
-                textposition='top left',
-                x=pmd.index,
-                y=[25 for x in pmd.index],
-                mode='lines+text',
-                hoverinfo='none',
-                line={'dash': 'dashdot',
-                      'color': 'rgba(127, 127, 127, .35)'},
-                showlegend=False,
-            ),
-            go.Scatter(
-                name='Performance',
-                text=['Performance' if x == pmd.index.max() else '' for x in
-                      pmd.index],
-                textposition='top left',
-                x=pmd.index,
-                y=[5 for x in pmd.index],
-                mode='lines+text',
-                hoverinfo='none',
-                line={'dash': 'dashdot',
-                      'color': 'rgba(127, 127, 127, .35)'},
-                showlegend=False,
-            ),
-            go.Scatter(
-                name='Maintenance',
-                text=['Maintenance' if x == pmd.index.max() else '' for x in
-                      pmd.index],
-                textposition='top left',
-                x=pmd.index,
-                y=[-10 for x in pmd.index],
-                mode='lines+text',
-                hoverinfo='none',
-                line={'dash': 'dashdot',
-                      'color': 'rgba(127, 127, 127, .35)'},
-                showlegend=False,
-            ),
-            go.Scatter(
-                name='Productive',
-                text=['Productive' if x == pmd.index.max() else '' for x in
-                      pmd.index],
-                textposition='top left',
-                x=pmd.index,
-                y=[-25 for x in pmd.index],
-                mode='lines+text',
-                hoverinfo='none',
-                line={'dash': 'dashdot',
-                      'color': 'rgba(127, 127, 127, .35)'},
-                showlegend=False,
-            ),
-            go.Scatter(
-                name='Cautionary',
-                text=['Cautionary' if x == pmd.index.max() else '' for x in
-                      pmd.index],
-                textposition='top left',
-                x=pmd.index,
-                y=[-40 for x in pmd.index],
-                mode='lines+text',
-                hoverinfo='none',
-                line={'dash': 'dashdot',
-                      'color': 'rgba(127, 127, 127, .35)'},
-                showlegend=False,
-            ),
-            go.Scatter(
-                name='Overreaching',
-                text=['Overreaching' if x == pmd.index.max() else '' for x in
-                      pmd.index],
-                textposition='top left',
-                x=pmd.index,
-                y=[-45 for x in pmd.index],
-                mode='lines+text',
-                hoverinfo='none',
-                line={'dash': 'dashdot',
-                      'color': 'rgba(127, 127, 127, .35)'},
-                showlegend=False,
             ),
         ],
         'layout': go.Layout(
@@ -2457,7 +2435,45 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                 size=10,
                 color=white
             ),
-            annotations=chart_annotations,
+            annotations=chart_annotations + [
+                # Zone labels as annotations instead of full-length Scatter traces
+                go.layout.Annotation(x=pmd.index.max(), y=25, xref='x', yref='y',
+                    text='No Fitness', showarrow=False, font=dict(size=10, color='rgba(127,127,127,.6)'),
+                    xanchor='right', yanchor='bottom'),
+                go.layout.Annotation(x=pmd.index.max(), y=5, xref='x', yref='y',
+                    text='Performance', showarrow=False, font=dict(size=10, color='rgba(127,127,127,.6)'),
+                    xanchor='right', yanchor='bottom'),
+                go.layout.Annotation(x=pmd.index.max(), y=-10, xref='x', yref='y',
+                    text='Maintenance', showarrow=False, font=dict(size=10, color='rgba(127,127,127,.6)'),
+                    xanchor='right', yanchor='bottom'),
+                go.layout.Annotation(x=pmd.index.max(), y=-25, xref='x', yref='y',
+                    text='Productive', showarrow=False, font=dict(size=10, color='rgba(127,127,127,.6)'),
+                    xanchor='right', yanchor='bottom'),
+                go.layout.Annotation(x=pmd.index.max(), y=-40, xref='x', yref='y',
+                    text='Cautionary', showarrow=False, font=dict(size=10, color='rgba(127,127,127,.6)'),
+                    xanchor='right', yanchor='bottom'),
+                go.layout.Annotation(x=pmd.index.max(), y=-45, xref='x', yref='y',
+                    text='Overreaching', showarrow=False, font=dict(size=10, color='rgba(127,127,127,.6)'),
+                    xanchor='right', yanchor='bottom'),
+            ],
+            # Reference lines as shapes instead of Scatter traces (massive JSON reduction)
+            shapes=[
+                dict(type='line', xref='x', yref='y', x0=pmd.index.min(), x1=pmd.index.max(),
+                     y0=25, y1=25, line=dict(color='rgba(127,127,127,.35)', width=1, dash='dashdot')),
+                dict(type='line', xref='x', yref='y', x0=pmd.index.min(), x1=pmd.index.max(),
+                     y0=5, y1=5, line=dict(color='rgba(127,127,127,.35)', width=1, dash='dashdot')),
+                dict(type='line', xref='x', yref='y', x0=pmd.index.min(), x1=pmd.index.max(),
+                     y0=-10, y1=-10, line=dict(color='rgba(127,127,127,.35)', width=1, dash='dashdot')),
+                dict(type='line', xref='x', yref='y', x0=pmd.index.min(), x1=pmd.index.max(),
+                     y0=-25, y1=-25, line=dict(color='rgba(127,127,127,.35)', width=1, dash='dashdot')),
+                dict(type='line', xref='x', yref='y', x0=pmd.index.min(), x1=pmd.index.max(),
+                     y0=-40, y1=-40, line=dict(color='rgba(127,127,127,.35)', width=1, dash='dashdot')),
+                dict(type='line', xref='x', yref='y', x0=pmd.index.min(), x1=pmd.index.max(),
+                     y0=-45, y1=-45, line=dict(color='rgba(127,127,127,.35)', width=1, dash='dashdot')),
+                # 80/20 threshold line (yaxis4)
+                dict(type='line', xref='x', yref='y4', x0=pmd.index.min(), x1=pmd.index.max(),
+                     y0=.2, y1=.2, line=dict(color='rgba(250,47,76,.5)', width=1, dash='dashdot')),
+            ],
             xaxis=dict(
                 showgrid=False,
                 showticklabels=True,
@@ -2919,65 +2935,86 @@ def workout_details(df_samples, start_seconds=None, end_seconds=None):
     else:
         highlight_df = df_samples[df_samples['activity_id'] == 0]  # Dummy
 
-    # Remove best points from main df_samples so lines do not overlap nor show 2 hoverinfos
-    for idx, row in df_samples.iterrows():
-        if idx in highlight_df.index:
-            df_samples.loc[idx, 'velocity_smooth'] = np.nan
-            df_samples.loc[idx, 'cadence'] = np.nan
-            df_samples.loc[idx, 'heartrate'] = np.nan
-            df_samples.loc[idx, 'watts'] = np.nan
+    # Vectorized: null out highlighted rows in main df so lines don't overlap (replaces iterrows)
+    mask = df_samples.index.isin(highlight_df.index)
+    df_samples.loc[mask, ['velocity_smooth', 'cadence', 'heartrate', 'watts']] = np.nan
 
+    # Apply LTTB downsampling to dense per-second sample data for faster rendering
+    # Only downsample the main trace (not the highlight selection — that's typically small)
+    n_samples = len(df_samples)
+    if n_samples > LTTB_THRESHOLD:
+        n_out = LTTB_THRESHOLD
+        # Build numeric x-axis for LTTB (time column as float seconds)
+        x_numeric = np.arange(n_samples, dtype=np.float64)
+
+        ds_speed_x, ds_speed_y = lttb_downsample(x_numeric, df_samples['velocity_smooth'].fillna(0).values, n_out)
+        ds_cadence_x, ds_cadence_y = lttb_downsample(x_numeric, df_samples['cadence'].fillna(0).values, n_out)
+        ds_hr_x, ds_hr_y = lttb_downsample(x_numeric, df_samples['heartrate'].fillna(0).values, n_out)
+        ds_watts_x, ds_watts_y = lttb_downsample(x_numeric, df_samples['watts'].fillna(0).values, n_out)
+
+        ds_idx = ds_speed_x.astype(int)  # Use speed indices as representative
+        time_intervals = df_samples['time_interval'].values
+
+        ds_time_speed = time_intervals[ds_speed_x.astype(int)]
+        ds_time_cadence = time_intervals[ds_cadence_x.astype(int)]
+        ds_time_hr = time_intervals[ds_hr_x.astype(int)]
+        ds_time_watts = time_intervals[ds_watts_x.astype(int)]
+    else:
+        ds_time_speed = df_samples['time_interval']
+        ds_speed_y = round(df_samples['velocity_smooth'], 1)
+        ds_time_cadence = df_samples['time_interval']
+        ds_cadence_y = round(df_samples['cadence'])
+        ds_time_hr = df_samples['time_interval']
+        ds_hr_y = round(df_samples['heartrate'])
+        ds_time_watts = df_samples['time_interval']
+        ds_watts_y = round(df_samples['watts'])
+
+    # Use WebGL (Scattergl) for per-second workout data — much faster rendering
     data = [
-        go.Scatter(
+        go.Scattergl(
             name='Speed',
-            x=df_samples['time_interval'],
-            y=round(df_samples['velocity_smooth'], 1),
-            # hoverinfo='x+y',
+            x=ds_time_speed,
+            y=np.round(ds_speed_y, 1),
             yaxis='y2',
             mode='lines',
             line={'color': teal}
         ),
-        go.Scatter(
+        go.Scattergl(
             name='Speed',
             x=highlight_df['time_interval'],
             y=round(highlight_df['velocity_smooth'], 1),
-            # hoverinfo='x+y',
             yaxis='y2',
             mode='lines',
             line={'color': orange}
         ),
-        go.Scatter(
+        go.Scattergl(
             name='Cadence',
-            x=df_samples['time_interval'],
-            y=round(df_samples['cadence']),
-            # hoverinfo='x+y',
+            x=ds_time_cadence,
+            y=np.round(ds_cadence_y),
             yaxis='y',
             mode='lines',
             line={'color': teal}
         ),
-        go.Scatter(
+        go.Scattergl(
             name='Cadence',
             x=highlight_df['time_interval'],
             y=round(highlight_df['cadence']),
-            # hoverinfo='x+y',
             yaxis='y',
             mode='lines',
             line={'color': orange}
         ),
-        go.Scatter(
+        go.Scattergl(
             name='Heart Rate',
-            x=df_samples['time_interval'],
-            y=round(df_samples['heartrate']),
-            # hoverinfo='x+y',
+            x=ds_time_hr,
+            y=np.round(ds_hr_y),
             yaxis='y3',
             mode='lines',
             line={'color': teal}
         ),
-        go.Scatter(
+        go.Scattergl(
             name='Heart Rate',
             x=highlight_df['time_interval'],
             y=round(highlight_df['heartrate']),
-            # hoverinfo='x+y',
             yaxis='y3',
             mode='lines',
             line={'color': orange}
@@ -2986,20 +3023,18 @@ def workout_details(df_samples, start_seconds=None, end_seconds=None):
 
     if use_power:
         data.extend([
-            go.Scatter(
+            go.Scattergl(
                 name='Power',
-                x=df_samples['time_interval'],
-                y=round(df_samples['watts']),
-                # hoverinfo='x+y',
+                x=ds_time_watts,
+                y=np.round(ds_watts_y),
                 yaxis='y4',
                 mode='lines',
                 line={'color': teal}
             ),
-            go.Scatter(
+            go.Scattergl(
                 name='Power',
                 x=highlight_df['time_interval'],
                 y=round(highlight_df['watts']),
-                # hoverinfo='x+y',
                 yaxis='y4',
                 mode='lines',
                 line={'color': orange}
