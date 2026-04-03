@@ -1101,6 +1101,13 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
     app.session.remove()
     df = df.merge(stryd_df, how='left', left_on='activity_id', right_on='strava_activity_id')
 
+    # After merge, start_date_local may be suffixed _x if strydSummary has its own start_date_local
+    date_col = 'start_date_local_x' if 'start_date_local_x' in df.columns else 'start_date_local'
+
+    # If requested metric doesn't exist (e.g. Stryd metrics without Stryd data), return empty chart
+    if metric not in df.columns:
+        return {'data': [], 'layout': go.Layout(title='No Data Found')}
+
     # Remove bad data
     df[metric].replace(0, np.nan, inplace=True)
 
@@ -1119,10 +1126,10 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
         pr = df[metric].max()
 
     # Filter df to date selection made from dropdown
-    df = df[df['start_date_local_x'].dt.date >= date]
+    df = df[df[date_col].dt.date >= date]
 
     # Resample to accurately plot line of best fit
-    df = df.set_index('start_date_local_x')
+    df = df.set_index(date_col)
     df = df[[metric]].resample('D').mean().reset_index()
     # Ignore dates with null values when running our model
     idx = np.isfinite(df[metric])
@@ -1142,7 +1149,7 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
         df[metric + '_trend'] = np.nan
         trend_strength = white
     # Change index back for the chart
-    df = df.set_index('start_date_local_x')
+    df = df.set_index(date_col)
 
     # Format tooltips
     if metric in ['duration', 'average_pace']:
