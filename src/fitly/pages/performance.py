@@ -908,6 +908,13 @@ def z_recommendation_chart(hrv_z_score, hr_z_score, hrv7_z_score, hr7_z_score, h
 
 
 def get_hrv_df():
+    # ── Result cache: HRV data only changes on daily sync ──
+    import time as _time
+    if hasattr(get_hrv_df, '_cache'):
+        _ct, _cr = get_hrv_df._cache
+        if (_time.time() - _ct) < 120:
+            return _cr
+
     # Scope queries to last 400 days (60-day rolling windows need ~60 days warmup,
     # PMC chart starts at day 42, so 400 days provides ample headroom)
     hrv_cutoff = (datetime.now() - timedelta(days=400)).strftime('%Y-%m-%d')
@@ -1009,6 +1016,8 @@ def get_hrv_df():
     #     else:
     #         hrv_df.at[i, 'upper_threshold_crossed'] = False
 
+    # Store in cache
+    get_hrv_df._cache = (_time.time(), hrv_df)
     return hrv_df
 
 
@@ -1070,10 +1079,18 @@ def get_trend_controls(selected=None, sport='run'):
 
 def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
     date = datetime.now().date() - timedelta(days=days)
+    athlete_info = get_athlete()
     df = pd.read_sql(
-        sql=app.session.query(stravaSummary).filter(
-            stravaSummary.type.like(sport), stravaSummary.elapsed_time > app.session.query(athlete).filter(
-                athlete.athlete_id == 1).first().min_non_warmup_workout_time).statement, con=engine)
+        sql=app.session.query(
+            stravaSummary.start_date_local, stravaSummary.activity_id, stravaSummary.type,
+            stravaSummary.elapsed_time, stravaSummary.distance, stravaSummary.moving_time,
+            stravaSummary.tss, stravaSummary.hrss, stravaSummary.trimp,
+            stravaSummary.average_heartrate, stravaSummary.average_watts,
+            stravaSummary.average_speed, stravaSummary.workout_intensity,
+        ).filter(
+            stravaSummary.type.like(sport),
+            stravaSummary.elapsed_time > athlete_info.min_non_warmup_workout_time,
+        ).statement, con=engine)
     if len(df) == 0:
         return {'data': [], 'layout': go.Layout(title='No Data Found')}
     if intensity != 'all':
@@ -1137,7 +1154,7 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
         text = ['{}: <b>{:.0f}'.format(metric.title().replace('_', ' '), x) for x in df[metric]]
 
     data = [
-        go.Scatter(
+        go.Scattergl(
             name=metric.title(),
             x=df.index,
             y=[np.nan if x == pr else x for x in df[metric]],
@@ -1151,7 +1168,7 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
             showlegend=False,
             marker={'size': 5},
         ),
-        go.Scatter(
+        go.Scattergl(
             name='{} Trend'.format(metric.title()),
             x=df.index,
             y=df[metric + '_trend'],
@@ -1183,7 +1200,7 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
     ]
     if pr in df[metric].values:
         data.append(
-            go.Scatter(
+            go.Scattergl(
                 name=metric.title() + ' PR',
                 x=df.index,
                 y=[np.nan if x != pr else x for x in df[metric]],
@@ -1880,7 +1897,7 @@ def create_yoy_chart(metric, sport='all'):
 
     # weekly_tss_goal = app.session.query(athlete).filter(athlete.athlete_id == 1).first().weekly_tss_goal
 
-    athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
+    athlete_info = get_athlete()
     use_power = True if athlete_info.use_run_power or athlete_info.use_cycle_power else False
 
     if sport != 'all':
@@ -1937,7 +1954,7 @@ def create_yoy_chart(metric, sport='all'):
             text = ['{}: <b>{:.0f}'.format(str(year), x) for x in df[year].cumsum().fillna(0)]
 
         data.append(
-            go.Scatter(
+            go.Scattergl(
                 name=str(year),
                 x=df.index,
                 y=df[year].cumsum(),
@@ -2042,6 +2059,15 @@ def get_workout_types(df_summary, run_status, ride_status, all_status):
 
 
 def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_status, atl_status):
+    # ── Result cache: avoid recomputing on rapid button clicks ──
+    # Keyed by the 6 toggle states, expires after 120 seconds.
+    import time as _time
+    _cache_key = (run_status, ride_status, all_status, power_status, hr_status, atl_status)
+    if hasattr(create_fitness_chart, '_cache'):
+        _ck, _ct, _cr = create_fitness_chart._cache
+        if _ck == _cache_key and (_time.time() - _ct) < 120:
+            return _cr
+    
     # Only select needed columns instead of entire table (reduces I/O and serialization)
     df_summary = pd.read_sql(
         sql=app.session.query(
@@ -2390,7 +2416,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                     'color': stress_bar_colors}
             ),
 
-            go.Scatter(
+            go.Scattergl(
                 name='High Intensity',
                 x=actual.index,
                 y=actual['l90d_percent_high_intensity'],
@@ -2406,7 +2432,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
             ),
 
             # Ramp Rate (hidden trace for hoverData)
-            go.Scatter(
+            go.Scattergl(
                 name='Ramp Rate',
                 x=pmd.index,
                 y=pmd['Ramp_Rate'],
@@ -2578,7 +2604,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                 fill='tonexty',
                 line={'color': dark_blue},
             ),
-            go.Scatter(
+            go.Scattergl(
                 name='HRV',
                 x=actual.index,
                 y=actual['ln_rmssd'],
@@ -2589,7 +2615,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                 hoverinfo='text',
                 line={'color': 'rgba(220,220,220,.20)'},
             ),
-            go.Scatter(
+            go.Scattergl(
                 name='HRV 7 Day Avg',
                 x=actual.index,
                 y=actual['ln_rmssd_7'],
@@ -2785,12 +2811,13 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                 overlaying='y',
             )
 
+    # Store in cache for rapid subsequent calls
+    create_fitness_chart._cache = (_cache_key, _time.time(), (figure, hoverData))
     return figure, hoverData
 
 
 def workout_distribution(sport='Ride', days=90, intensity='all'):
-    min_non_warmup_workout_time = app.session.query(athlete).filter(
-        athlete.athlete_id == 1).first().min_non_warmup_workout_time
+    min_non_warmup_workout_time = get_athlete().min_non_warmup_workout_time
 
     df_summary = pd.read_sql(
         sql=app.session.query(stravaSummary).filter(
@@ -2885,7 +2912,7 @@ def workout_distribution(sport='Ride', days=90, intensity='all'):
 
 
 def workout_summary_kpi(df_samples):
-    athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
+    athlete_info = get_athlete()
     use_power = True if athlete_info.use_run_power or athlete_info.use_cycle_power else False
     app.session.remove()
     height = '25%' if use_power else '33%'
@@ -2926,7 +2953,7 @@ def workout_details(df_samples, start_seconds=None, end_seconds=None):
     :param df_samples filtered on 1 activity
     :return: metric trend charts
     '''
-    athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
+    athlete_info = get_athlete()
     use_power = True if athlete_info.use_run_power or athlete_info.use_cycle_power else False
     app.session.remove()
 
@@ -3375,11 +3402,10 @@ def refresh_fitness_chart(ride_switch, run_switch, all_switch, power_switch, hr_
      ]
 )
 def update_trend_chart(*args):
-    athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
+    athlete_info = get_athlete()
     use_run_power = True if athlete_info.use_run_power else False
     use_cycle_power = True if athlete_info.use_cycle_power else False
     use_power = True if use_run_power or use_cycle_power else False
-    app.session.remove()
     ctx = dash.callback_context
     sport = 'run' if ctx.states['performance-activity-type-toggle.value'] == False else 'ride'
 
@@ -3436,9 +3462,8 @@ def update_trend_chart(*args):
      Input('performance-intensity-selector-low', 'n_clicks_timestamp')]
 )
 def update_icon(*args):
-    athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
+    athlete_info = get_athlete()
     use_power = True if athlete_info.use_run_power or athlete_info.use_cycle_power else False
-    app.session.remove()
 
     inputs = dash.callback_context.inputs
     sport = 'run' if not inputs['performance-activity-type-toggle.value'] else 'ride'
