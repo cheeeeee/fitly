@@ -223,11 +223,11 @@ def get_layout(**kwargs):
 
                                      html.Div(id='daily-recommendations',  # Populated by callback
                                               className='col-lg-3' if oura_credentials_supplied else '',
-                                              style={'display': 'none' if not oura_credentials_supplied else 'normal'}),
+                                              style={'display': 'none'}),  # Hidden initially; callback shows if data exists
 
                                      # PMC Chart
                                      dcc.Graph(id='pm-chart',
-                                               className='col-lg-8 mr-0 ml-0' if oura_credentials_supplied else 'col-lg-11 mr-0 ml-0',
+                                               className='col-lg-11 mr-0 ml-0',  # Full width initially; callback shrinks if recommendations show
                                                # Populated by callback
                                                style={'height': '100%'},
                                                config={'displayModeBar': False}),
@@ -2342,6 +2342,12 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                                     {'y': latest['detected_trend'],
                                      'text': f'Detected Trend: <b>{latest["detected_trend"]}'}])
 
+    # Compute stress bar y-axis cap using 95th percentile to prevent outlier
+    # workouts (e.g. ultras) from crushing visibility of normal stress bars
+    _stress_vals = pmd['stress_score'][pmd['stress_score'] > 0]
+    _stress_cap = _stress_vals.quantile(0.95) if len(_stress_vals) > 0 else pmd['stress_score'].max()
+    _stress_y_max = max(_stress_cap, pmd['stress_score'].max() * 0.5) * 3
+
     figure = {
         'data': [
             go.Scattergl(
@@ -2567,7 +2573,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
             yaxis2=dict(
                 # domain=[0, .85],
                 showticklabels=False,
-                range=[0, pmd['stress_score'].max() * 4],
+                range=[0, _stress_y_max],
                 showgrid=False,
                 type='linear',
                 side='right',
@@ -3277,6 +3283,9 @@ def create_annotation_table():
 # PMC KPIs
 @app.callback(
     [Output('daily-recommendations', 'children'),
+     Output('daily-recommendations', 'style'),
+     Output('daily-recommendations', 'className'),
+     Output('pm-chart', 'className'),
      Output('pmd-kpi', 'children')],
     [Input('pm-chart', 'hoverData')])
 def update_fitness_kpis(hoverData):
@@ -3307,9 +3316,17 @@ def update_fitness_kpis(hoverData):
                 except:
                     continue
 
-            return create_daily_recommendations(plan_rec) if oura_credentials_supplied else [], \
+            rec_content = create_daily_recommendations(plan_rec) if oura_credentials_supplied else []
+            has_recs = oura_credentials_supplied and rec_content and rec_content != []
+            rec_style = {'display': 'block'} if has_recs else {'display': 'none'}
+            rec_class = 'col-lg-3' if has_recs else ''
+            chart_class = 'col-lg-8 mr-0 ml-0' if has_recs else 'col-lg-11 mr-0 ml-0'
+            return rec_content, rec_style, rec_class, chart_class, \
                    create_fitness_kpis(date, fitness, ramp, rr_max_threshold, rr_min_threshold, fatigue, form, hrv7,
                                        trend)
+
+    # Default: no hover data — hide recommendations, expand chart
+    return [], {'display': 'none'}, '', 'col-lg-11 mr-0 ml-0', []
 
 
 # PMD Boolean Switches
