@@ -85,7 +85,7 @@ def pull_stryd_data():
     if len(df) > 0:
         app.server.logger.info('New stryd workouts found!')
         # Insert into db
-        df.to_sql('stryd_summary', engine, if_exists='append', index=True)
+        df.to_sql('stryd_summary', engine, if_exists='append', index=True, method='multi', chunksize=19)
         app.session.commit()
     app.session.remove()
 

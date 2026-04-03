@@ -83,7 +83,7 @@ def pull_fitbod_data():
             # Filter df to new workouts only for appending table
             df = df[df['Date_UTC'] > max_date]
         # Insert fitbod table into DB
-        df.to_sql('fitbod', engine, if_exists='append', index=False)
+        df.to_sql('fitbod', engine, if_exists='append', index=False, method='multi', chunksize=19)
         app.session.commit()
 
         app.session.remove()

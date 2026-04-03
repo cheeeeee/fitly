@@ -796,7 +796,7 @@ class FitlyActivity(stravalib.model.Activity):
                     app.session.execute(delete(stravaBestSamples).where(stravaBestSamples.activity_id == int(self.id)))
                     app.session.commit()
                     app.session.remove()
-                    df.to_sql('strava_best_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+                    df.to_sql('strava_best_samples', engine, if_exists='append', index=True, method='multi', chunksize=19)
                     app.server.logger.debug('Activity id "{}": ✓ strava_best_samples written ({} rows)'.format(self.id, len(df)))
 
                 _retry_db_write(_write_best_samples)
@@ -830,9 +830,9 @@ class FitlyActivity(stravalib.model.Activity):
             app.session.execute(delete(stravaSamples).where(stravaSamples.activity_id == int(self.id)))
             app.session.commit()
             app.session.remove()
-            self.df_summary.fillna(np.nan).to_sql('strava_summary', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+            self.df_summary.fillna(np.nan).to_sql('strava_summary', engine, if_exists='append', index=True, method='multi', chunksize=19)
             app.server.logger.debug('Activity id "{}": ✓ strava_summary written'.format(self.id))
-            self.df_samples.fillna(np.nan).to_sql('strava_samples', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+            self.df_samples.fillna(np.nan).to_sql('strava_samples', engine, if_exists='append', index=True, method='multi', chunksize=19)
             app.server.logger.debug('Activity id "{}": ✓ strava_samples written ({} rows)'.format(self.id, len(self.df_samples)))
 
         _retry_db_write(_write_summary_and_samples)
@@ -870,7 +870,7 @@ def training_workflow(min_non_warmup_workout_time, metric='hrv_baseline', athlet
                 db_test.at[min_oura_date, 'workout_step_desc'] = 'Low'
                 db_test.at[min_oura_date, 'completed'] = 0
                 db_test.at[min_oura_date, 'rationale'] = 'This is the first date hrv thresholds could be calculated'
-                db_test.to_sql('workout_step_log', engine, if_exists='append', index=True, method='multi', chunksize=1000)
+                db_test.to_sql('workout_step_log', engine, if_exists='append', index=True, method='multi', chunksize=19)
             except BaseException as e:
                 app.server.logger.error(f'Check enough oura data exists to generate workout recommendation: {e}')
                 oura_data_exists = False
@@ -1067,7 +1067,7 @@ def training_workflow(min_non_warmup_workout_time, metric='hrv_baseline', athlet
                     # Insert into db
                     df = df[['athlete_id', 'date', 'workout_step', 'workout_step_desc', 'completed', 'rationale']]
                     df['date'] = df['date'].dt.date
-                    df.to_sql('workout_step_log', engine, if_exists='append', index=False, method='multi', chunksize=1000)
+                    df.to_sql('workout_step_log', engine, if_exists='append', index=False, method='multi', chunksize=19)
                     # Bookmark peloton classes
                     if peloton_credentials_supplied:
                         set_peloton_workout_recommendations()

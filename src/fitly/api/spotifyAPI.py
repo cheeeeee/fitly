@@ -678,5 +678,4 @@ def parse_stream(playback_feed):
         # Merge trackinfo with track features
         track_table = pd.merge(track_info_df, track_features, how='left', left_on='track_id', right_on='id').set_index(
             'timestamp_utc').drop(columns=['id'])
-        # Insert into DB
-        track_table.to_sql('spotify_play_history', engine, if_exists='append', index=True)
+        track_table.to_sql('spotify_play_history', engine, if_exists='append', index=True, method='multi', chunksize=19)
