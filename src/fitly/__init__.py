@@ -23,6 +23,16 @@ def create_flask(config_object=f"{__package__}.settings"):
         "FITLY_SETTINGS", silent=True
     )
 
+    # Enable gzip compression on all responses.
+    # Dash sends large JSON payloads for chart data; gzip typically reduces
+    # transfer size by 70-90%. Browsers handle decompression natively via
+    # Accept-Encoding: gzip — no client-side code changes needed.
+    from flask_compress import Compress
+    server.config['COMPRESS_ALGORITHM'] = 'gzip'
+    server.config['COMPRESS_LEVEL'] = 1        # Fast compression — ideal for Pi 3's weak CPU
+    server.config['COMPRESS_MIN_SIZE'] = 500    # Don't compress tiny responses
+    Compress(server)
+
     return server
 
 # SQL w/ WAL - Optimized for Low-Memory Edge Devices
