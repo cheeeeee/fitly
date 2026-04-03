@@ -226,19 +226,54 @@ FITLY_SERVER_PORT=8080
 
 # Integrations
 
+## OAuth Redirect URIs (Callback URLs)
+
+Every integration that uses OAuth (Strava, Oura, Withings, Spotify) requires a **redirect URI** registered with the provider and matching your config. After you authorize, the provider redirects your browser back to this URL — so **it must be reachable from your browser**, not from the server.
+
+> **Common mistake:** Using `http://127.0.0.1:8050` when accessing Fitly from a different machine (e.g. laptop → Raspberry Pi). After authorizing Strava, Strava redirects your browser to `127.0.0.1:8050`, which is your laptop — not the Pi. The connection fails silently.
+
+### Choosing the right redirect URI
+
+| Access method | Redirect URI to use |
+|---|---|
+| Browser on same machine as Fitly | `http://127.0.0.1:8050/settings?strava` |
+| Browser on different LAN machine (e.g. Pi) | `http://<pi-ip>:8050/settings?strava` |
+| Reverse proxy with DNS | `https://fit.yourdomain.com/settings?strava` |
+
+Replace `?strava` with `?oura`, `?withings`, or `?spotify` for each integration.
+
+> **Important:** The redirect URI you set in your config **must exactly match** the one registered with the provider (Strava API settings, Oura developer portal, etc.), including the protocol (`http`/`https`) and port.
+
+### Example — Raspberry Pi at `192.168.1.50`
+
+In Strava API settings (`https://www.strava.com/settings/api`):
+```
+Authorization Callback Domain: 192.168.1.50
+```
+
+In `config/config.yaml`:
+```yaml
+strava:
+  redirect_uri: "http://192.168.1.50:8050/settings?strava"
+```
+
+---
+
 ## Required — Strava
 
 Strava is the primary hub for workout data.
 
-1. Go to https://www.strava.com/settings/api and set the authorization callback to `127.0.0.1:8050?strava`
-2. Copy your `client_id` and `client_secret` into your config
+1. Go to https://www.strava.com/settings/api
+2. Set the **Authorization Callback Domain** to match your access method (see table above)
+3. Copy your `client_id` and `client_secret` into your config
+4. Set `redirect_uri` in your config to `http://<your-host>:8050/settings?strava`
 
 ## Optional — Oura Ring
 
 Oura data powers the home page and improves performance analytics accuracy (HRV-based readiness, resting heart rate). Without it, the home page will not render.
 
 1. Create a developer account at https://cloud.ouraring.com/oauth/applications
-2. Set redirect URI to: `http://127.0.0.1:8050/settings?oura`
+2. Set redirect URI to: `http://<your-host>:8050/settings?oura`
 3. Copy `client_id` and `client_secret` into your config
 
 Config keys: `days_back` (how far back each cron pull goes, default `7`)
@@ -248,7 +283,7 @@ Config keys: `days_back` (how far back each cron pull goes, default `7`)
 Body composition data (weight, body fat) used to improve performance analytics.
 
 1. Create a developer account at https://account.withings.com/partner/dashboard_oauth2
-2. Set redirect URI to: `http://127.0.0.1:8050/settings?withings`
+2. Set redirect URI to: `http://<your-host>:8050/settings?withings`
 3. Copy `client_id` and `client_secret` into your config
 
 ## Optional — Spotify
@@ -256,7 +291,7 @@ Body composition data (weight, body fat) used to improve performance analytics.
 Tracks every song you listen to and analyzes your listening behavior (skips, rewinds, fast-forwards) to determine song likability by activity type and intensity. Can auto-generate recommended playlists.
 
 1. Create a developer account at https://developer.spotify.com/dashboard/
-2. Set redirect URI to: `http://127.0.0.1:8050/settings?spotify`
+2. Set redirect URI to: `http://<your-host>:8050/settings?spotify`
 3. Copy `client_id` and `client_secret` into your config
 
 > **Note:** A full application restart is required after first connecting Spotify for the live stream listener to start.
@@ -265,7 +300,7 @@ Tracks every song you listen to and analyzes your listening behavior (skips, rew
 
 Fitly matches Peloton classes to Strava workouts by timestamp and updates Strava activity titles with the class name. If using Oura, HRV-based recommendations can auto-bookmark new Peloton classes on your device daily.
 
-![Peloton recommendations](https://i.imgur.com/q654WHY.png)
+![Peloton recommendations](https://i.imgur.com/q654WHy.png)
 
 Enter your Peloton `username` and `password` into your config.
 
