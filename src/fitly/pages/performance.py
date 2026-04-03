@@ -1954,7 +1954,7 @@ def create_yoy_chart(metric, sport='all'):
             text = ['{}: <b>{:.0f}'.format(str(year), x) for x in df[year].cumsum().fillna(0)]
 
         data.append(
-            go.Scattergl(
+            go.Scatter(
                 name=str(year),
                 x=df.index,
                 y=df[year].cumsum(),
@@ -2615,7 +2615,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
                 hoverinfo='text',
                 line={'color': 'rgba(220,220,220,.20)'},
             ),
-            go.Scattergl(
+            go.Scatter(
                 name='HRV 7 Day Avg',
                 x=actual.index,
                 y=actual['ln_rmssd_7'],
