@@ -9,6 +9,7 @@ from sqlalchemy import delete, func, extract
 from datetime import datetime, timedelta
 import ast
 import time
+from .fitlyAPI import _retry_db_write
 import math
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
@@ -77,13 +78,16 @@ def save_spotify_token(token_dict):
         'refresh_token': token_dict.refresh_token,
         'token_type': token_dict.token_type
     }
-    # Delete current key
-    app.server.logger.debug('Deleting current spotify tokens')
-    app.session.execute(delete(apiTokens).where(apiTokens.service == 'Spotify'))
-    # Insert new key
-    app.server.logger.debug('Inserting new strava tokens')
-    app.session.add(apiTokens(date_utc=datetime.utcnow(), service='Spotify', tokens=pickle.dumps(token_dict)))
-    app.session.commit()
+    def _save_token():
+        # Delete current key
+        app.server.logger.debug('Deleting current spotify tokens')
+        app.session.execute(delete(apiTokens).where(apiTokens.service == 'Spotify'))
+        # Insert new key
+        app.server.logger.debug('Inserting new strava tokens')
+        app.session.add(apiTokens(date_utc=datetime.utcnow(), service='Spotify', tokens=pickle.dumps(token_dict)))
+        app.session.commit()
+
+    _retry_db_write(_save_token)
     app.session.remove()
 
 
@@ -679,4 +683,4 @@ def parse_stream(playback_feed):
         track_table = pd.merge(track_info_df, track_features, how='left', left_on='track_id', right_on='id').set_index(
             'timestamp_utc').drop(columns=['id'])
         # Insert into DB
-        track_table.to_sql('spotify_play_history', engine, if_exists='append', index=True)
+        _retry_db_write(lambda: track_table.to_sql('spotify_play_history', engine, if_exists='append', index=True, method='multi', chunksize=32))

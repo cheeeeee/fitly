@@ -59,10 +59,13 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
     athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
     processing = app.session.query(dbRefreshStatus).filter(dbRefreshStatus.refresh_method == 'processing').first()
     # Add record for refresh audit trail
-    refresh_record = dbRefreshStatus(timestamp_utc=run_time, refresh_method=refresh_method,
-                                     truncate=True if truncate or truncateDate else False)
-    app.session.add(refresh_record)
-    app.session.commit()
+    def _add_refresh_record():
+        refresh_record = dbRefreshStatus(timestamp_utc=run_time, refresh_method=refresh_method,
+                                         truncate=True if truncate or truncateDate else False)
+        app.session.add(refresh_record)
+        app.session.commit()
+    
+    _retry_db_write(_add_refresh_record)
 
     if not processing:
         try:
@@ -76,7 +79,7 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
 
                     # If only truncating past a certain date
                     if truncateDate:
-                        try:
+                        def _do_truncate_date():
                             app.server.logger.debug('Truncating strava_summary')
                             app.session.execute(
                                 delete(stravaSummary).where(stravaSummary.start_date_utc >= truncateDate))
@@ -111,11 +114,10 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
                             app.server.logger.debug('Truncating withings')
                             app.session.execute(delete(withings).where(withings.date_utc >= truncateDate))
                             app.session.commit()
-                        except BaseException as e:
-                            app.session.rollback()
-                            app.server.logger.error(e)
+
+                        _retry_db_write(_do_truncate_date)
                     else:
-                        try:
+                        def _do_truncate_all():
                             app.server.logger.debug('Truncating strava_summary')
                             app.session.execute(delete(stravaSummary))
                             app.server.logger.debug('Truncating strava_samples')
@@ -139,9 +141,8 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
                             app.server.logger.debug('Truncating fitbod')
                             app.session.execute(delete(fitbod))
                             app.session.commit()
-                        except BaseException as e:
-                            app.session.rollback()
-                            app.server.logger.error(e)
+
+                        _retry_db_write(_do_truncate_all)
 
                     app.session.remove()
 
@@ -278,14 +279,17 @@ def refresh_database(refresh_method='system', truncate=False, truncateDate=None)
                     strava_status = 'Awaiting oura cloud update'
 
                 app.server.logger.debug('Updating db refresh record with status...')
-                refresh_record = app.session.query(dbRefreshStatus).filter(
-                    dbRefreshStatus.timestamp_utc == run_time).first()
-                refresh_record.oura_status = oura_status
-                refresh_record.fitbod_status = fitbod_status
-                refresh_record.strava_status = strava_status
-                refresh_record.withings_status = withings_status
-                refresh_record.refresh_method = refresh_method
-                app.session.commit()
+                def _update_refresh_record():
+                    refresh_record = app.session.query(dbRefreshStatus).filter(
+                        dbRefreshStatus.timestamp_utc == run_time).first()
+                    refresh_record.oura_status = oura_status
+                    refresh_record.fitbod_status = fitbod_status
+                    refresh_record.strava_status = strava_status
+                    refresh_record.withings_status = withings_status
+                    refresh_record.refresh_method = refresh_method
+                    app.session.commit()
+
+                _retry_db_write(_update_refresh_record)
 
                 # Refresh peloton class types local json file
                 if peloton_credentials_supplied:

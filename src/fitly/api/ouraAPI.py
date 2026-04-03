@@ -131,7 +131,7 @@ def insert_readiness_data(df_readiness_summary, days_back=7):
     app.session.remove()
 
     app.server.logger.debug('Inserting oura readiness summary')
-    df_readiness_summary.to_sql('oura_readiness_summary', engine, if_exists='append', index=True)
+    _retry_db_write(lambda: df_readiness_summary.to_sql('oura_readiness_summary', engine, if_exists='append', index=True, method='multi', chunksize=32))
 
 
 def pull_activity_data(oura, days_back=7):
@@ -215,7 +215,7 @@ def insert_activity_data(df_activity_summary, df_activity_samples, days_back=7):
     # Insert Activity Summary
     app.server.logger.debug('Inserting oura activity summary')
     try:
-        df_activity_summary.to_sql('oura_activity_summary', engine, if_exists='append', index=True)
+        _retry_db_write(lambda: df_activity_summary.to_sql('oura_activity_summary', engine, if_exists='append', index=True, method='multi', chunksize=32))
 
 
     except BaseException as e:
@@ -224,7 +224,7 @@ def insert_activity_data(df_activity_summary, df_activity_samples, days_back=7):
     # Insert Activity Samples
     app.server.logger.debug('Inserting oura activity samples')
     try:
-        df_activity_samples.to_sql('oura_activity_samples', engine, if_exists='append', index=True)
+        _retry_db_write(lambda: df_activity_samples.to_sql('oura_activity_samples', engine, if_exists='append', index=True, method='multi', chunksize=32))
 
     except BaseException as e:
         app.server.logger.error(e)
@@ -304,7 +304,7 @@ def insert_sleep_data(df_sleep_summary, df_sleep_samples, days_back=7):
     # Insert Sleep Summary
     app.server.logger.debug('Inserting oura sleep summary')
     try:
-        df_sleep_summary.to_sql('oura_sleep_summary', engine, if_exists='append', index=True)
+        _retry_db_write(lambda: df_sleep_summary.to_sql('oura_sleep_summary', engine, if_exists='append', index=True, method='multi', chunksize=32))
 
     except BaseException as e:
         app.server.logger.error(e)
@@ -312,7 +312,7 @@ def insert_sleep_data(df_sleep_summary, df_sleep_samples, days_back=7):
     # Insert Sleep Samples
     # app.server.logger.debug('Inserting oura sleep samples')
     try:
-        df_sleep_samples.to_sql('oura_sleep_samples', engine, if_exists='append', index=True)
+        _retry_db_write(lambda: df_sleep_samples.to_sql('oura_sleep_samples', engine, if_exists='append', index=True, method='multi', chunksize=32))
 
     except BaseException as e:
         app.server.logger.error(e)

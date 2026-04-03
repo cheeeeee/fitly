@@ -6,7 +6,7 @@ from ..utils import config
 from .sqlalchemy_declarative import strydSummary
 from ..api.database import engine
 from sqlalchemy import func
-
+from .fitlyAPI import _retry_db_write
 
 def auth_stryd_session():
     requestJSON = {"email": config.get('stryd', 'username'), "password": config.get('stryd', 'password')}
@@ -85,7 +85,7 @@ def pull_stryd_data():
     if len(df) > 0:
         app.server.logger.info('New stryd workouts found!')
         # Insert into db
-        df.to_sql('stryd_summary', engine, if_exists='append', index=True)
+        _retry_db_write(lambda: df.to_sql('stryd_summary', engine, if_exists='append', index=True, method='multi', chunksize=32))
         app.session.commit()
     app.session.remove()
 

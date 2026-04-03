@@ -4,6 +4,7 @@ import os
 from ..api.sqlalchemy_declarative import fitbod
 from ..api.database import engine
 from sqlalchemy import func
+from .fitlyAPI import _retry_db_write
 import pandas as pd
 from ..app import app
 from ..utils import config
@@ -83,8 +84,11 @@ def pull_fitbod_data():
             # Filter df to new workouts only for appending table
             df = df[df['Date_UTC'] > max_date]
         # Insert fitbod table into DB
-        df.to_sql('fitbod', engine, if_exists='append', index=False)
-        app.session.commit()
+        def _insert_fitbod():
+            df.to_sql('fitbod', engine, if_exists='append', index=False, method='multi', chunksize=32)
+            app.session.commit()
+        
+        _retry_db_write(_insert_fitbod)
 
         app.session.remove()
         # Delete file in local folder
