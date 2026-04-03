@@ -1201,8 +1201,7 @@ def set_log_level(info_n_clicks, error_n_clicks, debug_n_clicks):
         latest = latest_dict[ctx.triggered[0]['prop_id'].split('.')[0]]
         config.set('logger', 'level', latest)
         # Save new logger level to config file
-        with open('./config/config.ini', 'w') as configfile:
-            config.write(configfile)
+        config.write_to_file()
 
     # Set logger level in the app server
     current_log_level = config.get('logger', 'level')
@@ -1220,6 +1219,8 @@ def set_log_level(info_n_clicks, error_n_clicks, debug_n_clicks):
               [State(server.config["LOCATION_COMPONENT_ID"], 'search')]
               )
 def update_tokens(n_clicks, search):
+    if not search or not n_clicks:
+        return None
     query_params = urlparse.urlparse(search)
     if 'oura' in search:
         query_params = urlparse.urlparse(search.replace('oura?', ''))
