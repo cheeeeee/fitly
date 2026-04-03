@@ -3290,6 +3290,7 @@ def create_annotation_table():
     [Input('pm-chart', 'hoverData')])
 def update_fitness_kpis(hoverData):
     date, fitness, ramp, fatigue, form, hrv, hrv_change, hrv7, hrv7_change, plan_rec, trend = None, None, None, None, None, None, None, None, None, None, None
+    rr_max_threshold, rr_min_threshold = None, None
     if hoverData is not None:
         if len(hoverData['points']) > 3:
             date = hoverData['points'][0]['x']
