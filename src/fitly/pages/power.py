@@ -927,6 +927,22 @@ def create_ftp_chart(activity_type='ride', power_unit='watts'):
         else:
             ftp_current = 'Current FTP {:.2f} W/kg'.format(current_ftp_wkg)
 
+    # Update the most recent month's bar to reflect the best available current FTP
+    if current_ftp_w and len(df_ftp) > 0:
+        last_idx = df_ftp.index.max()
+        if metric == 'ftp':
+            if current_ftp_w != df_ftp.loc[last_idx, 'ftp']:
+                df_ftp.loc[last_idx, 'ftp'] = current_ftp_w
+        elif metric == 'watts_per_kg' and athlete_info and athlete_info.weight_lbs and athlete_info.weight_lbs > 0:
+            current_ftp_wkg = current_ftp_w / (athlete_info.weight_lbs * 0.453592)
+            df_ftp.loc[last_idx, 'watts_per_kg'] = current_ftp_wkg
+
+        # Rebuild tooltip and % change for the updated bar
+        df_ftp['ftp_%'] = ['{}{:.0f}%'.format('+' if x > 0 else '', x) if x != 0 else '' for x in
+                           (((df_ftp[metric] - df_ftp[metric].shift(1)) / df_ftp[metric].shift(1)) * 100).fillna(0)]
+        tooltip = '<b>{:.0f} W {}' if metric == 'ftp' else '<b>{:.2f} W/kg {}'
+        df_ftp_tooltip = [tooltip.format(x, y) for x, y in zip(df_ftp[metric], df_ftp['ftp_%'])]
+
     figure = {
         'data': [
             go.Bar(
