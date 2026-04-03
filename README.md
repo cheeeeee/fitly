@@ -19,24 +19,6 @@ The included docker-compose.yml contains hardcoded resource limits (memory: '750
 
 Under the hood, the Python application initializes the SQLite database with PRAGMA journal_mode=WAL; and PRAGMA synchronous=NORMAL;. This heavily optimizes the database for multi-threaded worker pools, dramatically lowering SD card wear and eliminating micro-freezes during bulk data ingestion.
 
-# Fit.ly
-Web analytics for endurance athletes
-
-![Dashboard](https://i.imgur.com/Z3mfOMR.jpeg)
-![Performance](https://i.imgur.com/A5rJNff.png)
-![Charts](https://i.imgur.com/PewZiKt.png)
-![HRV](https://i.imgur.com/hsSPvyn.png)
-![Training](https://i.imgur.com/26Bglbc.jpg)
-![Music](https://i.imgur.com/tbx5YmT.png)
-![Oura](https://i.imgur.com/zeNnCvn.jpg)
-![Peloton](https://i.imgur.com/7j6Ez9K.jpg)
-![Withings](https://i.imgur.com/uafoBFI.jpg)
-
-Special thanks to Slapdash for helping organize!
-https://github.com/ned2/slapdash
-
----
-
 # Installation Methods
 
 ## Docker (Recommended)
