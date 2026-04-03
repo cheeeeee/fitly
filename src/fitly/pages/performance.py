@@ -2320,8 +2320,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
     yesterday = actual.loc[actual.index.max() - timedelta(days=1)]
 
     ### Start Graph ###
-    max_date = actual.index.max()
-    hoverData = {'points': [{'x': max_date.strftime('%Y-%m-%d') if hasattr(max_date, 'strftime') else max_date,
+    hoverData = {'points': [{'x': actual.index.max().date(),
                              'y': latest['CTL'].max(),
                              'text': 'Fitness'},
                             {'y': latest['Ramp_Rate'].max(), 'text': 'Ramp'},
@@ -3567,7 +3566,7 @@ def update_yoy_chart(*args):
     [Input('growth-chart', 'hoverData')])
 def update_growth_kpis(hoverData):
     cy, cy_metric, ly, ly_metric, cy_date, metric = None, None, None, None, None, None
-    if hoverData is not None and isinstance(hoverData, dict) and 'points' in hoverData:
+    if hoverData is not None:
         for point in hoverData['points']:
             if 'cy' in point['customdata']:
                 metric = point['customdata'].split('|')[1]
@@ -3588,7 +3587,7 @@ def update_growth_kpis(hoverData):
     [Input('pm-chart', 'clickData')]
 )
 def update_fitness_table(clickData):
-    if clickData is not None and isinstance(clickData, dict) and 'points' in clickData:
+    if clickData:
         if len(clickData['points']) >= 3:
             date = clickData['points'][0]['x']
             return create_activity_table(date)
