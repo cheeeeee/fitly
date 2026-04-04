@@ -1,3 +1,4 @@
+import os
 from . import create_flask, create_dash, db_startup
 from .layouts import main_layout_header, main_layout_sidebar
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -39,6 +40,18 @@ app.server.logger.setLevel(config.get('logger', 'level') or 'DEBUG')
 app.server.logger.addHandler(handler)
 # Suppress WSGI info logs
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+# Verify SQLite journal mode now that logging is configured
+try:
+    import sqlite3 as _sqlite3_check
+    from .api.database import _db_path as _check_db_path
+    _check_conn = _sqlite3_check.connect(os.path.abspath(_check_db_path))
+    _journal_mode = _check_conn.execute("PRAGMA journal_mode").fetchone()
+    _check_conn.close()
+    _mode = _journal_mode[0] if _journal_mode else 'unknown'
+    app.server.logger.info(f"SQLite journal mode at startup: {_mode} (db: {os.path.abspath(_check_db_path)})")
+except Exception as _jm_e:
+    app.server.logger.warning(f"Could not verify SQLite journal mode: {_jm_e}")
 
 # Push an application context so we can use Flask's 'current_app'
 with server.app_context():
