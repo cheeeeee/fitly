@@ -188,11 +188,15 @@ def generate_cycle_power_zone_card():
 def generate_run_power_zone_card():
     # TODO: Switch over to using Critical Power for everything once we get the critical power model working
 
-    rftp = pd.read_sql(
-        sql=app.session.query(stravaSummary.ftp).filter(stravaSummary.type.like('run')).statement, con=engine)
-    rftp = int(rftp.loc[rftp.index.max()].fillna(0)['ftp']) if len(rftp) > 0 else 0
     athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
     use_run_power = athlete_info.use_run_power
+
+    # Use athlete-set FTP, fallback to latest activity FTP
+    rftp = athlete_info.run_ftp if athlete_info.run_ftp else 0
+    if not rftp:
+        ftp_df = pd.read_sql(
+            sql=app.session.query(stravaSummary.ftp).filter(stravaSummary.type.like('run')).statement, con=engine)
+        rftp = int(ftp_df.loc[ftp_df.index.max()].fillna(0)['ftp']) if len(ftp_df) > 0 else 0
     app.session.remove()
 
     run_power_zone_threshold_1 = athlete_info.run_power_zone_threshold_1
@@ -1197,8 +1201,7 @@ def set_log_level(info_n_clicks, error_n_clicks, debug_n_clicks):
         latest = latest_dict[ctx.triggered[0]['prop_id'].split('.')[0]]
         config.set('logger', 'level', latest)
         # Save new logger level to config file
-        with open('./config/config.ini', 'w') as configfile:
-            config.write(configfile)
+        config.write_to_file()
 
     # Set logger level in the app server
     current_log_level = config.get('logger', 'level')
@@ -1216,6 +1219,8 @@ def set_log_level(info_n_clicks, error_n_clicks, debug_n_clicks):
               [State(server.config["LOCATION_COMPONENT_ID"], 'search')]
               )
 def update_tokens(n_clicks, search):
+    if not search or not n_clicks:
+        return None
     query_params = urlparse.urlparse(search)
     if 'oura' in search:
         query_params = urlparse.urlparse(search.replace('oura?', ''))

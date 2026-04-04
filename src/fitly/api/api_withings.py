@@ -99,4 +99,4 @@ def pull_withings_data():
         df = df[(df.index > withings_max_date) & (~np.isnan(df['weight'])) & (~np.isnan(df['fat_ratio']))]
         if len(df) > 0:
             app.server.logger.info('New withings measurements found!')
-            df.to_sql('withings', engine, if_exists='append', index=True)
+            df.to_sql('withings', engine, if_exists='append', index=True, method='multi', chunksize=19)

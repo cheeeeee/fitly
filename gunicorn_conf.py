@@ -40,6 +40,23 @@ else:
 # Ensure at least 2 workers for reliability
 recommended_workers = max(2, recommended_workers)
 
+# Memory-based cap: each worker is a full Python process (~80-150MB RSS).
+# On low-memory systems (≤1GB, e.g. RPi3), 3+ workers cause OOM → swap
+# thrash → full system lockup (SSH unresponsive, kernel starved for RAM).
+try:
+    _total_ram_mb = 0
+    with open('/proc/meminfo') as _f:
+        for _line in _f:
+            if _line.startswith('MemTotal:'):
+                _total_ram_mb = int(_line.split()[1]) // 1024
+                break
+    if _total_ram_mb <= 1024:
+        recommended_workers = min(recommended_workers, 2)
+    elif _total_ram_mb <= 2048:
+        recommended_workers = min(recommended_workers, 3)
+except Exception:
+    pass
+
 # ---------------------------------------------------------------------------
 # Allow overrides via config (YAML preferred, falls back to INI) → env vars → computed default
 # ---------------------------------------------------------------------------
