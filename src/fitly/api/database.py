@@ -29,28 +29,21 @@ if not _db_path:
 
 import sqlite3 as _sqlite3
 import logging as _logging
-import sys as _sys
 
 _wal_logger = _logging.getLogger(__name__)
 
 # Force WAL mode using a raw sqlite3 connection before the SQLAlchemy engine
 # is created. This bypasses SQLAlchemy transaction management entirely.
-# PRAGMA journal_mode=WAL requires autocommit (isolation_level=None) and
-# cannot be executed inside an active transaction.
-# NOTE: print() to stderr is intentional — logging is not yet configured
-# when database.py is imported, so logger messages would be silently dropped.
+# PRAGMA journal_mode=WAL requires autocommit (isolation_level=None).
 try:
     _abs_db_path = os.path.abspath(_db_path)
-    print(f"[fitly:database] WAL init: connecting to {_abs_db_path}", file=_sys.stderr, flush=True)
     _wal_conn = _sqlite3.connect(_abs_db_path)
     _wal_conn.isolation_level = None   # autocommit — required for WAL PRAGMA
     _wal_mode = _wal_conn.execute("PRAGMA journal_mode=WAL").fetchone()
     _wal_conn.execute("PRAGMA synchronous=NORMAL")
     _wal_conn.close()
-    _mode_str = _wal_mode[0] if _wal_mode else 'unknown'
-    print(f"[fitly:database] WAL init result: {_mode_str}", file=_sys.stderr, flush=True)
 except Exception as _e:
-    print(f"[fitly:database] WAL init FAILED: {_e}", file=_sys.stderr, flush=True)
+    _wal_logger.error(f"Failed to pre-initialize SQLite WAL mode: {_e}")
 
 # Connection timeout: how long SQLite waits before raising OperationalError
 _timeout = int(os.environ.get('FITLY_DATABASE_CONNECTION_TIMEOUT_S', '30'))
