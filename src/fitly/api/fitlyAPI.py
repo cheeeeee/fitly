@@ -286,6 +286,7 @@ class FitlyActivity(stravalib.model.Activity):
             3. athlete.ride_ftp (user-set or default)
         """
         self.stryd_metrics = []
+        self.ftp = None  # default; overwritten by fallback chain below
         if self.type and ('run' in self.type.lower() or 'walk' in self.type.lower()):
             # If stryd credentials in config, grab ftp
             if stryd_credentials_supplied:
