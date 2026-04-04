@@ -2185,7 +2185,7 @@ def create_fitness_chart(run_status, ride_status, all_status, power_status, hr_s
 
     if power_status and hr_status:
         # If tss not available, use hrss
-        df_summary['stress_score'] = df_summary.apply(lambda row: row['hrss'] if np.isnan(row['tss']) else row['tss'],
+        df_summary['stress_score'] = df_summary.apply(lambda row: row['hrss'] if pd.isna(row['tss']) else row['tss'],
                                                       axis=1).fillna(0)
     elif power_status:
         df_summary['stress_score'] = df_summary['tss']
