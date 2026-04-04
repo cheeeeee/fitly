@@ -23,6 +23,7 @@ from ..api.fitlyAPI import training_workflow
 from ..app import app
 from flask import current_app as server
 from ..utils import peloton_credentials_supplied, oura_credentials_supplied, withings_credentials_supplied, config
+from ..units import is_metric, set_unit_system, weight_label
 import json
 import ast
 import urllib.parse as urlparse
@@ -310,7 +311,7 @@ def athlete_card():
             generate_entry_field('name', 'Name', athlete_info.name),
             generate_entry_field('birthday', 'Birthday', athlete_info.birthday, input_type='date'),
             generate_entry_field('sex', 'Sex (M/F)', athlete_info.sex),
-            generate_entry_field('weight', 'Weight (lbs)', athlete_info.weight_lbs),
+            generate_entry_field('weight', 'Weight ({})'.format(weight_label()), athlete_info.weight_lbs),
             generate_entry_field('rest-hr', 'Resting HR', athlete_info.resting_hr),
             generate_entry_field('ride-ftp', 'Ride FTP (Watts)', athlete_info.ride_ftp),
             generate_entry_field('run-ftp', 'Run FTP (Watts)', athlete_info.run_ftp),
@@ -575,7 +576,7 @@ def generate_settings_dashboard():
                  ]),
 
         html.Div(id='settings-shelf-2', className='row align-items-start text-center mt-2', children=[
-            html.Div(id='database-container', className='col-lg-4', children=[
+            html.Div(id='database-container', className='col-lg-3', children=[
                 dbc.Card(className='mb-2', children=[
                     dbc.CardHeader(html.H4(className='text-left mb-0', children='Database')),
                     dbc.CardBody(children=[
@@ -599,11 +600,33 @@ def generate_settings_dashboard():
                     ])
                 ])
             ]),
-            html.Div(id='athlete-container', className='col-lg-4',
+            html.Div(id='athlete-container', className='col-lg-3',
                      children=[html.Div(id='athlete', children=athlete_card())]),
 
-            html.Div(id='goal-container', className='col-lg-4',
+            html.Div(id='goal-container', className='col-lg-3',
                      children=[html.Div(id='goals', children=goal_parameters())]),
+
+            html.Div(id='measurements-container', className='col-lg-3', children=[
+                dbc.Card(className='mb-2', children=[
+                    dbc.CardHeader(html.H4(className='text-left mb-0', children='Measurements')),
+                    dbc.CardBody(className='align-items-center text-center', children=[
+                        html.Div(className='row align-items-center justify-content-center mb-2 mt-2', children=[
+                            html.H6('Imperial', className='col-4 text-right mb-0',
+                                    style={'opacity': '1.0' if not is_metric() else '0.5'}),
+                            html.Div(className='col-4', children=[
+                                daq.BooleanSwitch(
+                                    id='unit-system-switch',
+                                    on=is_metric(),
+                                )
+                            ]),
+                            html.H6('Metric', className='col-4 text-left mb-0',
+                                    style={'opacity': '1.0' if is_metric() else '0.5'}),
+                        ]),
+                        html.I(id='unit-system-status', className='fa fa-check',
+                               style={'display': 'none', 'color': 'green', 'fontSize': '150%'})
+                    ])
+                ])
+            ]),
         ]),
         html.Div(id='settings-shelf-3', className='row align-items-start text-center mt-2 mb-2', children=[
             html.Div(id='logs-container', className='col-lg-12',
@@ -922,6 +945,22 @@ def save_athlete_settings(
             output_styles[index2] = {'display': 'none'}
 
     return output_styles
+
+
+# Callback for toggling measurement system (imperial/metric)
+@app.callback(
+    Output('unit-system-status', 'style'),
+    [Input('unit-system-switch', 'on')]
+)
+def toggle_unit_system(is_on):
+    system = 'metric' if is_on else 'imperial'
+    try:
+        set_unit_system(system)
+        app.server.logger.info('Measurement system set to: {}'.format(system))
+        return {'display': 'inline-block', 'color': 'green', 'fontSize': '150%'}
+    except BaseException as e:
+        app.server.logger.error(e)
+        return {'display': 'none'}
 
 
 # Callback for toggling auto-generation of spotify playlists

@@ -16,6 +16,8 @@ from ..api.sqlalchemy_declarative import athlete, stravaSummary, stravaSamples, 
 from ..api.database import engine
 from ..utils import utc_to_local, config, oura_credentials_supplied, stryd_credentials_supplied, \
     peloton_credentials_supplied
+from ..units import distance as conv_distance, distance_label, speed as conv_speed, speed_label, \
+    pace as conv_pace, pace_label, elevation as conv_elevation, elevation_label
 from ..cache import get_athlete
 from ..pages.power import power_curve, zone_chart
 import re
@@ -585,7 +587,7 @@ def get_layout(**kwargs):
                                          {'name': 'Name', 'id': 'name'},
                                          {'name': 'Type', 'id': 'type'},
                                          {'name': 'Time', 'id': 'time'},
-                                         {'name': 'Mileage', 'id': 'distance'},
+                                         {'name': 'Distance ({})'.format(distance_label()), 'id': 'distance'},
                                          {'name': 'PSS', 'id': 'tss'},
                                          {'name': 'HRSS', 'id': 'hrss'},
                                          # {'name': 'TRIMP', 'id': 'trimp'},
@@ -599,7 +601,7 @@ def get_layout(**kwargs):
                                                           {'name': 'Name', 'id': 'name'},
                                                           {'name': 'Type', 'id': 'type'},
                                                           {'name': 'Time', 'id': 'time'},
-                                                          {'name': 'Mileage', 'id': 'distance'},
+                                                          {'name': 'Distance ({})'.format(distance_label()), 'id': 'distance'},
                                                           {'name': 'TRIMP', 'id': 'trimp'},
                                                           {'name': 'activity_id', 'id': 'activity_id'}],
                                      style_as_list_view=True,
@@ -1029,9 +1031,9 @@ def get_trend_controls(selected=None, sport='run'):
     metrics = {'average-watts': {'fa fa-bolt': 'Power (w)'},
                'average-heartrate': {'fa fa-heartbeat': 'Heartrate'},
                'tss': {'fa fa-tachometer-alt': 'Stress (tss)'},
-               'distance': {'fa fa-arrows-alt-h': 'Distance (mi)'},
+               'distance': {'fa fa-arrows-alt-h': 'Distance ({})'.format(distance_label())},
                'elapsed-time': {'fa fa-clock': 'Duration (min)'},
-               'average-speed': {'fa fa-flag-checkered': 'Pace'},
+               'average-speed': {'fa fa-flag-checkered': 'Pace ({})'.format(pace_label())},
                'average-ground-time': {'fa fa-road': 'Ground contact time'},
                'average-oscillation': {'fa fa-arrows-alt-v': 'Vertical Oscillation'},
                'average-leg-spring': {'fa fa-frog': 'Leg Spring Stiffness (LSS)'}
@@ -1155,7 +1157,9 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
     if metric in ['duration', 'average_pace']:
         text = ['{}: <b>{}'.format(metric.title().replace('_', ' '), str(timedelta(minutes=x)).split(".")[0]) for x in
                 df[metric].fillna(0)]
-    elif metric in ['distance', 'average_oscillation', 'average_leg_spring']:
+    elif metric == 'distance':
+        text = ['{}: <b>{:.1f} {}'.format(metric.title().replace('_', ' '), conv_distance(x), distance_label()) for x in df[metric]]
+    elif metric in ['average_oscillation', 'average_leg_spring']:
         text = ['{}: <b>{:.1f}'.format(metric.title().replace('_', ' '), x) for x in df[metric]]
     else:
         text = ['{}: <b>{:.0f}'.format(metric.title().replace('_', ' '), x) for x in df[metric]]
@@ -1857,9 +1861,9 @@ def create_growth_kpis(date, cy, cy_metric, ly, ly_metric, metric):
                                 'mod_intensity_seconds']:
         ly_title = '{}: {}'.format(ly, timedelta(seconds=ly_metric))
     if cy_metric and metric == 'distance':
-        cy_title = '{}: {:.1f} mi.'.format(cy, cy_metric)
+        cy_title = '{}: {:.1f} {}'.format(cy, conv_distance(cy_metric), distance_label())
     if ly_metric and metric == 'distance':
-        ly_title = '{}: {:.1f} mi.'.format(ly, ly_metric)
+        ly_title = '{}: {:.1f} {}'.format(ly, conv_distance(ly_metric), distance_label())
 
     if cy_metric and metric in ['hrss', 'trimp', 'tss']:
         cy_title = '{}: {:.0f}'.format(cy, cy_metric)
@@ -1956,7 +1960,7 @@ def create_yoy_chart(metric, sport='all'):
         if metric in ['elapsed_time', 'high_intensity_seconds', 'low_intensity_seconds', 'mod_intensity_seconds']:
             text = ['{}: <b>{}'.format(str(year), timedelta(seconds=x)) for x in df[year].cumsum().fillna(0)]
         elif metric == 'distance':
-            text = ['{}: <b>{:.1f} mi'.format(str(year), x) for x in df[year].cumsum().fillna(0)]
+            text = ['{}: <b>{:.1f} {}'.format(str(year), conv_distance(x), distance_label()) for x in df[year].cumsum().fillna(0)]
         elif metric in ['hrss', 'trimp', 'tss']:
             text = ['{}: <b>{:.0f}'.format(str(year), x) for x in df[year].cumsum().fillna(0)]
 

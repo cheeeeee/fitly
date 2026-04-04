@@ -398,6 +398,13 @@ echo "┌─ General Settings ────────────────�
 echo "└────────────────────────────────────────────────────────────" >&2
 TZ=$(_prompt "Your timezone (IANA format, e.g. America/New_York)" "America/New_York")
 APP_PASSWORD=$(_prompt "Settings page password (blank = no password)" "")
+UNIT_SYSTEM=$(_prompt "Measurement system (imperial/metric)" "imperial")
+# Normalise to lowercase
+UNIT_SYSTEM=$(echo "$UNIT_SYSTEM" | tr '[:upper:]' '[:lower:]')
+case "$UNIT_SYSTEM" in
+    metric) ;;
+    *) UNIT_SYSTEM="imperial" ;;
+esac
 CRON_ENABLE="false"
 _confirm "Enable hourly automatic data refresh cron job?" && CRON_ENABLE="true"
 CRON_HOUR=$(_prompt "Cron refresh hour ('*' = every hour, '2' = 2am only)" "*")
@@ -444,6 +451,7 @@ cron:
 settings:
   password: "${APP_PASSWORD}"
   gunicorn_workers: ${GUN_WORKERS}
+  unit_system: ${UNIT_SYSTEM}
 
 # ---------------------------------------------------------------------------
 # Spotify — leave client_id / client_secret blank to disable
