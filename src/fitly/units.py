@@ -49,8 +49,15 @@ def set_unit_system(system):
     system = system.strip().lower()
     if system not in ('imperial', 'metric'):
         raise ValueError(f"Invalid unit system: {system!r}")
+    
     config.set('settings', 'unit_system', system)
-    config.write_to_file()
+    try:
+        config.write_to_file()
+    except (PermissionError, OSError) as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Unable to persist unit system to config file. Applied for current session only. Error: %s", e
+        )
 
 
 # ── Distance (miles ↔ km) ───────────────────────────────────────────────────
