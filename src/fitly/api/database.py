@@ -27,6 +27,29 @@ if not _db_path:
 if not _db_path:
     _db_path = './config/fitness.db'
 
+import sqlite3 as _sqlite3
+import logging as _logging
+
+_wal_logger = _logging.getLogger(__name__)
+
+# Force WAL mode using a raw sqlite3 connection before the SQLAlchemy engine
+# is created. This bypasses SQLAlchemy transaction management entirely.
+# PRAGMA journal_mode=WAL requires autocommit (isolation_level=None) and
+# cannot be executed inside an active transaction — this approach guarantees
+# those preconditions are met regardless of how the engine is later configured.
+try:
+    _wal_conn = _sqlite3.connect(_db_path)
+    _wal_conn.isolation_level = None   # autocommit — required for WAL PRAGMA
+    _wal_mode = _wal_conn.execute("PRAGMA journal_mode=WAL").fetchone()
+    _wal_conn.execute("PRAGMA synchronous=NORMAL")
+    _wal_conn.close()
+    if _wal_mode and _wal_mode[0].lower() == 'wal':
+        _wal_logger.info("SQLite WAL mode confirmed (set at engine init).")
+    else:
+        _wal_logger.warning(f"SQLite WAL mode NOT set at engine init — got: {_wal_mode}")
+except Exception as _e:
+    _wal_logger.error(f"Failed to pre-initialize SQLite WAL mode: {_e}")
+
 # Connection timeout: how long SQLite waits before raising OperationalError
 _timeout = int(os.environ.get('FITLY_DATABASE_CONNECTION_TIMEOUT_S', '30'))
 

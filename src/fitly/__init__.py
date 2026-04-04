@@ -89,23 +89,7 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     dbapi_connection.isolation_level = isolation_level
 
 def create_dash(server):
-    from sqlalchemy import text as _sa_text
     Base.metadata.create_all(bind=engine)
-
-    # Explicitly activate WAL mode before any writes.
-    # The per-connection PRAGMA event handler can be silently skipped if config
-    # loading fails, so we force WAL here unconditionally.
-    try:
-        with engine.connect() as _init_conn:
-            _wal_result = _init_conn.execute(_sa_text("PRAGMA journal_mode=WAL")).fetchone()
-            _init_conn.execute(_sa_text("PRAGMA synchronous=NORMAL"))
-            _mode = _wal_result[0] if _wal_result else 'unknown'
-            if _mode.lower() == 'wal':
-                server.logger.info("SQLite WAL mode confirmed.")
-            else:
-                server.logger.warning(f"SQLite WAL mode NOT set — got: {_mode}")
-    except Exception as _e:
-        server.logger.error(f"Failed to initialize SQLite WAL mode: {_e}")
 
     """Create the Dash instance for this application"""
     app = Dash(
