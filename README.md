@@ -169,6 +169,7 @@ FITLY_SERVER_PORT=8080
 |---|---|---|
 | `password` | _(blank)_ | Password for the settings page |
 | `gunicorn_workers` | auto | Override gunicorn worker count (see `[server]`) |
+| `unit_system` | `imperial` | Measurement system: `imperial` (mi, lbs, °F) or `metric` (km, kg, °C) |
 
 ## `[database]` ⭐ _new_
 
@@ -462,4 +463,35 @@ database:
 Or via environment variable:
 ```sh
 FITLY_DATABASE_DB_PATH=/data/fitness.db
+```
+
+---
+
+# Measurement System (Imperial / Metric)
+
+Fitly supports both imperial and metric units. You can set your preference in three ways:
+
+1. **During setup:** `init-host.sh` prompts for your measurement system (default: `imperial`)
+2. **In config:** Set `unit_system: metric` under `[settings]` in `config.yaml`
+3. **At runtime:** Toggle the switch on the **Settings → Measurements** card
+
+## How it works
+
+| Metric | Imperial | Metric |
+|---|---|---|
+| Distance | miles (mi) | kilometres (km) |
+| Speed / Pace | min:sec/mi | min:sec/km |
+| Elevation | feet (ft) | metres (m) |
+| Weight | pounds (lbs) | kilograms (kg) |
+| Temperature | °F | °C |
+
+### Weight storage
+
+All weight values are **stored internally in the unit you enter**. The database column is `weight_lbs` for historical reasons, but the value stored reflects whichever unit system is active at the time of entry. All other measurements (distance, speed, elevation) are always stored in imperial units from the Strava API and converted at the display layer only — no data migration is needed when switching systems.
+
+> **Note:** If you switch from imperial to metric (or vice versa) after entering your weight, you may need to re-enter your weight in the new unit on the Settings → Athlete card.
+
+Environment variable override:
+```sh
+FITLY_SETTINGS_UNIT_SYSTEM=metric
 ```
