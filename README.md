@@ -7,6 +7,18 @@
 
 ---
 
+## ✨ Key Features & Improvements
+
+This repository builds heavily on the original Fitly project with major enhancements for stability, performance, and usability:
+- **Cloud-Native Configuration:** Fully supports `config.yaml` and environment-variable overrides (`FITLY_SECTION_KEY=val`) for easy deployment in Docker and Kubernetes.
+- **Improved Concurrency:** Re-architected data ingestion using Python multiprocessing pools and SQLite `WAL` mode to eliminate database lock errors and speed up data pulls.
+- **Edge-Device Ready:** Includes `init-host.sh` for Raspberry Pi/SD-card host tuning. Employs hardware detection to throttle concurrent writes and prevent fatal OS I/O deadlocks.
+- **Dynamic FTP Matching:** Intelligently extracts Cycling FTP from Strava activities named *"FTP test"* and queries Run FTP directly via the Stryd API.
+- **Expanded Integrations:** First-class Nextcloud support for syncing Fitbod strength routines, along with Peloton, Spotify, Oura, and Withings sync handling.
+- **Metric/Imperial System:** Global toggles for handling measurements (Coming soon / tracked dynamically across running and cycling pages).
+
+---
+
 ## 🚀 Quick Start
 
 The easiest way to get started is using the included pre-flight script. It detects your hardware, tunes the host (if on a Raspberry Pi), and generates a `config/config.yaml`.
