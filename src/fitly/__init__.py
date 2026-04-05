@@ -81,11 +81,14 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
             break
         except sqlite3.OperationalError as e:
             if "disk I/O error" in str(e):
-                cursor.execute("PRAGMA journal_mode=TRUNCATE")
-                cursor.execute("PRAGMA synchronous=NORMAL")
-                cursor.execute(f"PRAGMA cache_size=-{cache_size_mb * 1000}")
-                cursor.execute("PRAGMA temp_store=MEMORY")
-                cursor.execute(f"PRAGMA mmap_size={mmap_size_mb * 1024 * 1024}")
+                logger.warning(f"Disk I/O error blocking SQLite PRAGMA configuration on the current filesystem. Disabling explicit journal formats: {e}")
+                try:
+                    cursor.execute("PRAGMA synchronous=NORMAL")
+                    cursor.execute(f"PRAGMA cache_size=-{cache_size_mb * 1000}")
+                    cursor.execute("PRAGMA temp_store=MEMORY")
+                    cursor.execute(f"PRAGMA mmap_size={mmap_size_mb * 1024 * 1024}")
+                except Exception as fallback_e:
+                    logger.warning(f"Secondary PRAGMA overwrite attempt bypassed: {fallback_e}")
                 break
             else:
                 if attempt < 2:
