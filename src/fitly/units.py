@@ -138,6 +138,16 @@ def weight(lbs):
         return None
     return lbs * _LBS_TO_KG if is_metric() else lbs
 
+def weight_to_lbs(display_weight):
+    """Convert display unit back to store as lbs."""
+    if display_weight is None or display_weight == '':
+        return None
+    try:
+        display_weight = float(display_weight)
+        return display_weight / _LBS_TO_KG if is_metric() else display_weight
+    except ValueError:
+        return None
+
 
 def weight_label():
     """Return the appropriate weight abbreviation."""

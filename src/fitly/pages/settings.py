@@ -23,7 +23,7 @@ from ..api.fitlyAPI import training_workflow
 from ..app import app
 from flask import current_app as server
 from ..utils import peloton_credentials_supplied, oura_credentials_supplied, withings_credentials_supplied, config
-from ..units import is_metric, set_unit_system, weight_label
+from ..units import is_metric, set_unit_system, weight_label, weight, weight_to_lbs
 import json
 import ast
 import urllib.parse as urlparse
@@ -31,16 +31,20 @@ from urllib.parse import parse_qs
 from dash import no_update
 
 strava_auth_client = get_strava_client()
-withings_auth_client = WithingsAuth(config.get('withings', 'client_id'), config.get('withings', 'client_secret'),
-                                    callback_uri=config.get('withings', 'redirect_uri'), scope=(
-        AuthScope.USER_ACTIVITY, AuthScope.USER_METRICS, AuthScope.USER_INFO, AuthScope.USER_SLEEP_EVENTS
-    ))
+withings_auth_client = WithingsAuth(
+    config.get('withings', 'client_id'), 
+    config.get('withings', 'client_secret'),
+    callback_uri=config.get('withings', 'redirect_uri') or 'http://127.0.0.1:8050/settings?withings', 
+    scope=(AuthScope.USER_ACTIVITY, AuthScope.USER_METRICS, AuthScope.USER_INFO, AuthScope.USER_SLEEP_EVENTS)
+)
 oura_auth_client = OuraOAuth2Client(client_id=config.get('oura', 'client_id'),
                                     client_secret=config.get('oura', 'client_secret'))
 
-spotify_auth_client = tk.UserAuth(tk.Credentials(client_id=config.get('spotify', 'client_id'),
-                                                 client_secret=config.get('spotify', 'client_secret'),
-                                                 redirect_uri=config.get('spotify', 'redirect_uri')), tk.scope.every)
+spotify_auth_client = tk.UserAuth(tk.Credentials(
+    client_id=config.get('spotify', 'client_id'),
+    client_secret=config.get('spotify', 'client_secret'),
+    redirect_uri=config.get('spotify', 'redirect_uri') or 'http://127.0.0.1:8050/settings?spotify'
+), tk.scope.every)
 
 
 def get_layout(**kwargs):
@@ -311,7 +315,7 @@ def athlete_card():
             generate_entry_field('name', 'Name', athlete_info.name),
             generate_entry_field('birthday', 'Birthday', athlete_info.birthday, input_type='date'),
             generate_entry_field('sex', 'Sex (M/F)', athlete_info.sex),
-            generate_entry_field('weight', 'Weight ({})'.format(weight_label()), athlete_info.weight_lbs),
+            generate_entry_field('weight', 'Weight ({})'.format(weight_label()), round(weight(athlete_info.weight_lbs), 1) if athlete_info.weight_lbs else None),
             generate_entry_field('rest-hr', 'Resting HR', athlete_info.resting_hr),
             generate_entry_field('ride-ftp', 'Ride FTP (Watts)', athlete_info.ride_ftp),
             generate_entry_field('run-ftp', 'Run FTP (Watts)', athlete_info.run_ftp),
@@ -357,12 +361,15 @@ def athlete_card():
 
 
 def generate_hr_zone_card():
-    rhr = pd.read_sql(
-        sql=app.session.query(ouraSleepSummary.hr_lowest).statement,
-        con=engine)
-    rhr = int(rhr.loc[rhr.index.max()]['hr_lowest']) if len(rhr) > 0 else 0
     athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
     birthday = athlete_info.birthday
+    
+    rhr = athlete_info.resting_hr
+    if not rhr:
+        rhr_df = pd.read_sql(
+            sql=app.session.query(ouraSleepSummary.hr_lowest).statement,
+            con=engine)
+        rhr = int(rhr_df.loc[rhr_df.index.max()]['hr_lowest']) if len(rhr_df) > 0 else 0
 
     app.session.remove()
 
@@ -702,7 +709,7 @@ def save_athlete_section(
         success = success and update_athlete_db_value(name_value, 'name')
         success = success and update_athlete_db_value(birthday_value, 'birthday')
         success = success and update_athlete_db_value(sex_value, 'sex')
-        success = success and update_athlete_db_value(weight_value, 'weight_lbs')
+        success = success and update_athlete_db_value(weight_to_lbs(weight_value), 'weight_lbs')
         success = success and update_athlete_db_value(rest_hr_value, 'resting_hr')
         success = success and update_athlete_db_value(ride_ftp_value, 'ride_ftp')
         success = success and update_athlete_db_value(run_ftp_value, 'run_ftp')

@@ -12,6 +12,8 @@ try:
     client_id = config.get('strava', 'client_id')
     client_secret = config.get('strava', 'client_secret')
     redirect_uri = config.get('strava', 'redirect_uri')
+    if not redirect_uri:
+        redirect_uri = 'http://127.0.0.1:8050/settings?strava'
 except Exception:
     client_id = ''
     client_secret = ''
