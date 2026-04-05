@@ -2617,7 +2617,7 @@ def generate_oura_activity_content(date):
                     ]),
                     dbc.Button(id='walking-equivalency-button', className='col-lg-4 contentbutton', children=[
                         html.Div(children=['WALKING EQUIV.']),
-                        html.H6('{:.1f} mi'.format(df['daily_movement'].max() * 0.000621371),
+                        html.H6('{:.1f} {}'.format(conv_distance(df['daily_movement'].max() * 0.000621371), distance_label()),
                                 className='mb-0')
                     ])
                 ])

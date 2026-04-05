@@ -17,7 +17,7 @@ from ..api.database import engine
 from ..utils import utc_to_local, config, oura_credentials_supplied, stryd_credentials_supplied, \
     peloton_credentials_supplied
 from ..units import distance as conv_distance, distance_label, speed as conv_speed, speed_label, \
-    pace as conv_pace, pace_label, elevation as conv_elevation, elevation_label
+    pace as conv_pace, pace_label, elevation as conv_elevation, elevation_label, is_metric
 from ..cache import get_athlete
 from ..pages.power import power_curve, zone_chart
 import re
@@ -1118,7 +1118,8 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
         df['duration'] = df[metric] / 60
         metric = 'duration'
     elif metric == 'average_speed':
-        df['average_pace'] = 60 / df[metric]
+        # Safely extract min/km or min/mi utilizing internal conv_speed
+        df['average_pace'] = 60 / df[metric].apply(conv_speed)
         metric = 'average_pace'
 
     # Get all time PR of current metric
@@ -1155,7 +1156,8 @@ def get_trend_chart(metric, sport='Ride', days=90, intensity='all'):
 
     # Format tooltips
     if metric in ['duration', 'average_pace']:
-        text = ['{}: <b>{}'.format(metric.title().replace('_', ' '), str(timedelta(minutes=x)).split(".")[0]) for x in
+        label_suffix = (' ' + pace_label() if metric == 'average_pace' else '')
+        text = ['{}: <b>{}{}'.format(metric.title().replace('_', ' '), str(timedelta(minutes=x)).split(".")[0], label_suffix) for x in
                 df[metric].fillna(0)]
     elif metric == 'distance':
         text = ['{}: <b>{:.1f} {}'.format(metric.title().replace('_', ' '), conv_distance(x), distance_label()) for x in df[metric]]
@@ -1820,6 +1822,7 @@ def create_activity_table(date=None):
 
     app.session.remove()
 
+    df_table['distance'] = df_table['distance'].apply(conv_distance)
     df_table['distance'] = df_table['distance'].replace({0: np.nan})
     # Filter df to columns we want for the table
     # If data was returned for date passed
@@ -3185,11 +3188,15 @@ def calculate_splits(df_samples):
     if np.isnan(df_samples['distance'].max()):
         return None
     else:
-        df_samples['miles'] = df_samples['distance'] * 0.000189394
-        df_samples['mile_marker'] = df_samples['miles'].apply(np.floor)
-        df_samples['mile_marker_previous'] = df_samples['mile_marker'].shift(1)
+        if is_metric():
+            df_samples['split_distance'] = df_samples['distance'] * 0.0003048
+        else:
+            df_samples['split_distance'] = df_samples['distance'] * 0.000189394
+            
+        df_samples['split_marker'] = df_samples['split_distance'].apply(np.floor)
+        df_samples['split_marker_previous'] = df_samples['split_marker'].shift(1)
 
-        df_samples = df_samples[(df_samples['mile_marker'] != df_samples['mile_marker_previous']) |
+        df_samples = df_samples[(df_samples['split_marker'] != df_samples['split_marker_previous']) |
                                 (df_samples.index == df_samples.index.max())]
         df_samples = df_samples.iloc[1:]
 
@@ -3197,19 +3204,18 @@ def calculate_splits(df_samples):
 
         df_samples['time'] = df_samples['time'] - df_samples['time_prev']
 
-        # Get remainder of miles for final mile_marker and normalize final time for non full mile to get accurate pace if remaining mileage at end of ride exists
+        # Get remainder of distance for final split_marker and normalize final time for non full split to get accurate pace
         max_index = df_samples.index.max()
-        if df_samples.at[max_index, 'mile_marker'] == df_samples.at[max_index, 'mile_marker_previous']:
-            df_samples.at[max_index, 'mile_marker'] = df_samples.at[max_index, 'miles'] % 1
-            df_samples.at[max_index, 'time'] = df_samples.at[max_index, 'time'] / df_samples.at[
-                max_index, 'mile_marker']
+        if df_samples.at[max_index, 'split_marker'] == df_samples.at[max_index, 'split_marker_previous']:
+            df_samples.at[max_index, 'split_marker'] = df_samples.at[max_index, 'split_distance'] % 1
+            df_samples.at[max_index, 'time'] = df_samples.at[max_index, 'time'] / df_samples.at[max_index, 'split_marker']
             # Format as 2 decimal places after calculation is done for pace so table looks nice
-            df_samples.at[max_index, 'mile_marker'] = round(df_samples.at[max_index, 'miles'] % 1, 2)
+            df_samples.at[max_index, 'split_marker'] = round(df_samples.at[max_index, 'split_distance'] % 1, 2)
 
-        df_samples['time_str'] = ['{:02.0f}:{:02.0f} /mi'.format(x // 60, (x % 60)) for x in df_samples['time']]
+        df_samples['time_str'] = ['{:02.0f}:{:02.0f} {}'.format(x // 60, (x % 60), pace_label()) for x in df_samples['time']]
 
-        df_samples_table_columns = ['mile_marker', 'time_str']
-        col_names = ['Mile', 'Pace']
+        df_samples_table_columns = ['split_marker', 'time_str']
+        col_names = ['Kilometer' if is_metric() else 'Mile', 'Pace']
 
         return html.Div(className='table', style={'height': '100%'}, children=[
             dash_table.DataTable(
