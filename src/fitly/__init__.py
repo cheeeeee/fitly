@@ -1,5 +1,6 @@
 from flask import Flask
 from dash import Dash
+import sqlite3
 
 from .__version__ import __version__
 from .utils import get_dash_args_from_flask_config, config
@@ -78,6 +79,19 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
             cursor.execute(f"PRAGMA mmap_size={mmap_size_mb * 1024 * 1024}")
             cursor.execute(f"PRAGMA wal_autocheckpoint={wal_autocheckpoint}")
             break
+        except sqlite3.OperationalError as e:
+            if "disk I/O error" in str(e):
+                cursor.execute("PRAGMA journal_mode=TRUNCATE")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.execute(f"PRAGMA cache_size=-{cache_size_mb * 1000}")
+                cursor.execute("PRAGMA temp_store=MEMORY")
+                cursor.execute(f"PRAGMA mmap_size={mmap_size_mb * 1024 * 1024}")
+                break
+            else:
+                if attempt < 2:
+                    time.sleep(0.5)
+                else:
+                    raise
         except Exception:
             if attempt < 2:
                 time.sleep(0.5)
