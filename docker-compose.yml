@@ -6,6 +6,7 @@ version: "3.8"
 
 services:
   fitly:
+    image: ghcr.io/cheeeeee/fitly:latest
     build: .
     container_name: fitly
     restart: unless-stopped
