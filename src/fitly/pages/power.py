@@ -3,7 +3,6 @@ import dash
 from dash import dcc
 from dash import html
 import plotly.graph_objs as go
-import dash_daq as daq
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output, State
 from ..api.sqlalchemy_declarative import stravaSummary, stravaSamples, stravaBestSamples, athlete, withings

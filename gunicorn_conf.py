@@ -87,8 +87,8 @@ loglevel = os.getenv("LOG_LEVEL") or _cfg_get('logger', 'level') or "info"
 keepalive = 120
 errorlog = "-"
 
-# Preload the app so the APScheduler does not duplicate across workers
-preload_app = True
+# Preload cannot be True with SQLite due to inherited connection file descriptors causing segfaults
+preload_app = False
 
 # Set generous timeout for long-running data-pull callbacks
 _cfg_timeout = _cfg_get('server', 'request_timeout_s')

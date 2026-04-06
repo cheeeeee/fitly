@@ -2,7 +2,6 @@ import dash
 from datetime import datetime, timedelta
 import dash_bootstrap_components as dbc
 from dash import dcc
-import dash_daq as daq
 from dash import html
 from dash import dash_table
 import numpy as np
@@ -70,7 +69,7 @@ def get_layout(**kwargs):
                                                              className='col d-inline-block'),
 
                                                      html.Div(className='col mb-2', children=[
-                                                         dbc.Input(id='annotation-password', bs_size="sm",
+                                                         dbc.Input(id='annotation-password', size="sm",
                                                                    type='password', placeholder='Password', value=''),
                                                      ]),
 
@@ -196,9 +195,9 @@ def get_layout(**kwargs):
                                                           className='col-lg-12 col-3 align-items-center',
                                                           style={'padding': '0', 'alignSelf': 'center'},
                                                           children=[
-                                                              daq.BooleanSwitch(
+                                                              dbc.Switch(
                                                                   id='run-pmc-switch',
-                                                                  on=True,
+                                                                  value=True,
                                                                   style={'display': 'inline-block',
                                                                          'vertical-align': 'middle'}
                                                               ),
@@ -215,9 +214,9 @@ def get_layout(**kwargs):
                                                  html.Div(id='ride-pmc', className='col-lg-12 col-3',
                                                           style={'padding': '0', 'alignSelf': 'center'},
                                                           children=[
-                                                              daq.BooleanSwitch(
+                                                              dbc.Switch(
                                                                   id='ride-pmc-switch',
-                                                                  on=pmc_switch_settings['ride_status'],
+                                                                  value=pmc_switch_settings['ride_status'],
                                                                   style={'display': 'inline-block',
                                                                          'vertical-align': 'middle'}
                                                               ),
@@ -235,9 +234,9 @@ def get_layout(**kwargs):
                                                  html.Div(id='all-pmc', className='col-lg-12 col-3',
                                                           style={'padding': '0', 'alignSelf': 'center'},
                                                           children=[
-                                                              daq.BooleanSwitch(
+                                                              dbc.Switch(
                                                                   id='all-pmc-switch',
-                                                                  on=pmc_switch_settings['all_status'],
+                                                                  value=pmc_switch_settings['all_status'],
                                                                   style={'display': 'inline-block',
                                                                          'vertical-align': 'middle'}
                                                               ),
@@ -254,9 +253,9 @@ def get_layout(**kwargs):
                                                  html.Div(id='power-pmc', className='col-lg-12 col-3',
                                                           style={'padding': '0', 'alignSelf': 'center'},
                                                           children=[
-                                                              daq.BooleanSwitch(
+                                                              dbc.Switch(
                                                                   id='power-pmc-switch',
-                                                                  on=use_power,
+                                                                  value=use_power,
                                                                   style={'display': 'inline-block',
                                                                          'vertical-align': 'middle'},
                                                                   disabled=pmc_switch_settings[
@@ -275,9 +274,9 @@ def get_layout(**kwargs):
                                                  html.Div(id='hr-pmc', className='col-lg-12 col-3',
                                                           style={'padding': '0', 'alignSelf': 'center'},
                                                           children=[
-                                                              daq.BooleanSwitch(
+                                                              dbc.Switch(
                                                                   id='hr-pmc-switch',
-                                                                  on=pmc_switch_settings['hr_status'],
+                                                                  value=pmc_switch_settings['hr_status'],
                                                                   style={'display': 'inline-block',
                                                                          'vertical-align': 'middle'}
                                                               ),
@@ -295,9 +294,9 @@ def get_layout(**kwargs):
                                                  html.Div(id='atl-pmc', className='col-lg-12 col-3',
                                                           style={'padding': '0', 'alignSelf': 'center'},
                                                           children=[
-                                                              daq.BooleanSwitch(
+                                                              dbc.Switch(
                                                                   id='atl-pmc-switch',
-                                                                  on=pmc_switch_settings['atl_status'],
+                                                                  value=pmc_switch_settings['atl_status'],
                                                                   style={'display': 'inline-block',
                                                                          'vertical-align': 'middle'},
                                                               ),
@@ -357,7 +356,7 @@ def get_layout(**kwargs):
                                                                               n_clicks_timestamp=0),
                                                      ],
                                                          label="L90D",
-                                                         bs_size='sm',
+                                                         size='sm',
                                                          className="mb-0",
                                                          id='performance-time-selector',
                                                          style={'display': 'inline-block', 'paddingRight': '2vw'},
@@ -395,7 +394,7 @@ def get_layout(**kwargs):
                                                                               n_clicks_timestamp=0),
                                                      ],
                                                          label="All Intensities",
-                                                         bs_size='sm',
+                                                         size='sm',
                                                          className="mb-0",
                                                          id='performance-intensity-selector',
                                                          style={'display': 'inline-block', 'paddingLeft': '2vw'},
@@ -617,7 +616,7 @@ def get_layout(**kwargs):
 
                                          ],
                                          label="Run Distance",
-                                         bs_size='sm',
+                                         size='sm',
                                          className="mb-0",
                                          id='growth-chart-metric-select',
                                      ),

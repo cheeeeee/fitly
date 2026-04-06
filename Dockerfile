@@ -12,6 +12,8 @@ RUN pip install -U pip && pip install --no-cache-dir gunicorn
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Patch sweat library for numpy > 1.20 deprecations
+RUN sed -i 's/np.int/int/g' /usr/local/lib/python3.13/site-packages/sweat/io/models/mixins.py
 COPY . .
 
 ENV PYTHONPATH=/app/src

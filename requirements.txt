@@ -4,7 +4,6 @@ configparser==5.2.0
 PyYAML>=6.0
 dash>=2.15.0
 dash-bootstrap-components>=1.5.0
-dash-daq>=0.5.0
 numpy>=1.26.0
 oura==1.1.4
 pandas>=2.2.0

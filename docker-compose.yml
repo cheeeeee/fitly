@@ -1,9 +1,6 @@
 # Docker Compose for Fitly — uses FITLY_MEM_LIMIT from .env (set by init-host.sh)
 # The mem_limit prevents the container from consuming all host RAM and causing
 # system-wide OOM lockup (SSH freeze, kernel swap thrash).
-
-version: "3.8"
-
 services:
   fitly:
     build: .
@@ -19,4 +16,4 @@ services:
     # and injects it into .env. This ensures Docker kills the container (OOM)
     # rather than letting it swap-thrash the entire host.
     mem_limit: ${FITLY_MEM_LIMIT:-512M}
-    memswap_limit: ${FITLY_MEM_LIMIT:-512M}  # Equal to mem_limit = no swap
+    memswap_limit: ${FITLY_MEM_LIMIT:-512M} # Equal to mem_limit = no swap

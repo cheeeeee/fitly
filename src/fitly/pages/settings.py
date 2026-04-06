@@ -3,7 +3,6 @@ from dash import html
 from dash.dependencies import Input, Output, State
 from dash import dcc
 import dash_bootstrap_components as dbc
-import dash_daq as daq
 from oura import OuraOAuth2Client
 from ..api.ouraAPI import oura_connected, connect_oura_link, save_oura_token
 from ..api.stravaApi import strava_connected, get_strava_client, connect_strava_link, save_strava_token
@@ -143,9 +142,9 @@ def generate_cycle_power_zone_card():
 
     return dbc.Card([
         dbc.CardHeader([dbc.Row([html.H4(className='col-8 text-left mb-0', children='Cycling Power Zones'),
-                                 html.Div(className='col-4', children=[daq.BooleanSwitch(
+                                 html.Div(className='col-4', children=[dbc.Switch(
                                      id='use-cycle-power-switch',
-                                     on=use_cycle_power,
+                                     value=use_cycle_power,
                                  )])])
                         ]
                        ),
@@ -202,9 +201,9 @@ def generate_run_power_zone_card():
 
     return dbc.Card([
         dbc.CardHeader([dbc.Row([html.H4(className='col-9 text-left mb-0', children='Running Power Zones'),
-                                 html.Div(className='col-3', children=[daq.BooleanSwitch(
+                                 html.Div(className='col-3', children=[dbc.Switch(
                                      id='use-run-power-switch',
-                                     on=use_run_power,
+                                     value=use_run_power,
                                  )])])
                         ]
                        ),
@@ -425,9 +424,9 @@ def goal_parameters():
             html.Div(className='row mb-2 mt-2', children=[
                 html.H6('Use weekly TSS for fitness goals', className='col-5  mb-0',
                         style={'display': 'inline-block'}),
-                daq.BooleanSwitch(
+                dbc.Switch(
                     id='use-tss-for-goal-switch',
-                    on=use_hrv,
+                    value=use_hrv,
                     className='col-2 offset-5'
                 )
             ]),
@@ -435,9 +434,9 @@ def goal_parameters():
                      children=[
                          html.H6('Use oura readiness score (>=80) for workout goals', className='col-5 mb-0',
                                  style={'display': 'inline-block'}),
-                         daq.BooleanSwitch(
+                         dbc.Switch(
                              id='use-readiness-for-goal-switch',
-                             on=use_readiness,
+                             value=use_readiness,
                              className='col-2 offset-5'
                          )
                      ]),
@@ -493,9 +492,9 @@ def generate_settings_dashboard():
                                                       html.H6('Auto-generate workout playlists',
                                                               className='col-9  mb-0',
                                                               style={'display': 'inline-block'}),
-                                                      daq.BooleanSwitch(
+                                                      dbc.Switch(
                                                           id='spotify-playlists-switch',
-                                                          on=athlete_info.spotify_playlists_switch,
+                                                          value=athlete_info.spotify_playlists_switch,
                                                           className='col-3'
                                                       )
                                                   ]),
@@ -507,9 +506,9 @@ def generate_settings_dashboard():
                                                                   children='Use Intensity Recommendation',
                                                                   className='col-9  mb-0',
                                                                   style={'display': 'inline-block'}),
-                                                          daq.BooleanSwitch(
+                                                          dbc.Switch(
                                                               id='spotify-use-rec-intensity-switch',
-                                                              on=athlete_info.spotify_use_rec_intensity,
+                                                              value=athlete_info.spotify_use_rec_intensity,
                                                               className='col-3'
                                                           )
                                                       ]),

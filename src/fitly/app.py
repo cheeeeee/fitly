@@ -2,6 +2,7 @@ from . import create_flask, create_dash, db_startup
 from .layouts import main_layout_header, main_layout_sidebar
 from apscheduler.schedulers.background import BackgroundScheduler
 from .utils import spotify_credentials_supplied
+from dash import html
 
 # The Flask instance
 server = create_flask()
@@ -11,6 +12,8 @@ app = create_dash(server)
 
 # New DB startup tasks
 db_startup(app)
+
+
 
 # Logging — all values configurable via [logger] section
 import logging
@@ -38,7 +41,7 @@ handler.setFormatter(formatter)
 app.server.logger.setLevel(config.get('logger', 'level') or 'DEBUG')
 app.server.logger.addHandler(handler)
 # Suppress WSGI info logs
-logging.getLogger('werkzeug').setLevel(logging.ERROR)
+logging.getLogger('werkzeug').setLevel(logging.INFO)
 
 # Push an application context so we can use Flask's 'current_app'
 with server.app_context():
@@ -84,4 +87,4 @@ with server.app_context():
     app.session.remove()
     # configure the Dash instance's layout
     app.layout = main_layout_header()
-    # app.layout = main_layout_sidebar()
+

@@ -9,7 +9,7 @@ TITLE = "Fit.ly"
 
 # The value of this parameter will be propagated into both
 # `app.scripts.config.serve_locally` and `app.css.config.serve_locally`
-SERVE_LOCALLY = False
+SERVE_LOCALLY = True
 
 #
 # Dash.__init__ keyword arguments

@@ -29,8 +29,7 @@ def make_header(**kwargs):
         html.Ul(
             id=server.config["NAVBAR_CONTAINER_ID"], className="navbar-nav"
         ),
-        no_gutters=True,
-        className="ml-auto flex-nowrap mt-0",
+        className="g-0 ml-auto flex-nowrap mt-0",
         align="center",
     )
 
