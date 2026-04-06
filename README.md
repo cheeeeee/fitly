@@ -98,6 +98,61 @@ Fitly determines your Functional Threshold Power (FTP) dynamically to power its 
 
 ---
 
+## Configuration Reference (config.yaml)
+
+Fitly generates a `config.yaml` file automatically in the `/config` folder based on your environment variables.
+
+## `[cron]`
+
+| Key | Default | Description |
+|---|---|---|
+| `hourly_pull` | `false` | Enable background data refresh |
+| `refresh_hour` | `*` | APScheduler hour expression (`*` = every hour, `2` = 2am, `*/3` = every 3h) |
+
+## `[settings]`
+
+| Key | Default | Description |
+|---|---|---|
+| `password` | _(blank)_ | Password for the settings page |
+| `gunicorn_workers` | auto | Override gunicorn worker count (see `[server]`) |
+| `unit_system` | `imperial` | Measurement system: `imperial` (mi, lbs, °F) or `metric` (km, kg, °C) |
+
+## `[database]`
+
+| Key | Default | Description |
+|---|---|---|
+| `db_path` | `./config/fitness.db` | SQLite file path — **mount an SSD/NVMe volume here for best performance** |
+| `connection_timeout_s` | `30` | Seconds to wait for a locked DB before erroring |
+| `busy_timeout_ms` | `30000` | SQLite `PRAGMA busy_timeout` |
+| `cache_size_mb` | `64` | In-memory page cache size (MB) |
+| `mmap_size_mb` | `64` | Memory-mapped I/O size (0 to disable; useful on SSD) |
+| `wal_autocheckpoint` | `2000` | WAL checkpoint threshold (pages) |
+
+## `[server]`
+
+| Key | Default | Description |
+|---|---|---|
+| `host` | `0.0.0.0` | Bind address (`127.0.0.1` for localhost-only) |
+| `port` | `80` | TCP port |
+| `request_timeout_s` | `1200` | Gunicorn worker timeout in seconds |
+
+## `[processing]`
+
+| Key | Default | Description |
+|---|---|---|
+| `workers` | `auto` | Parallel workers for activity imports (`auto` = half of CPUs) |
+| `serialize_db_writes` | `true` | Serialize DB writes with a lock (`true` = safe for SD cards; `false` = faster on SSD) |
+| `db_write_max_retries` | `5` | Retry attempts when SQLite reports `database is locked` |
+| `db_write_base_delay_s` | `1.0` | Initial retry delay in seconds (doubles each attempt) |
+
+## `[timezone]`
+
+| Key | Default | Description |
+|---|---|---|
+| `timezone` | `America/New_York` | Your local timezone (IANA format) |
+
+---
+
 ## 🛠 Advanced Usage
 
 ### Hosting Externally
@@ -112,4 +167,35 @@ processing:
 database:
   cache_size_mb: 256
   mmap_size_mb: 256
+```
+
+---
+
+# Measurement System (Imperial / Metric)
+
+Fitly supports both imperial and metric units. You can set your preference in three ways:
+
+1. **During setup:** `init-host.sh` prompts for your measurement system (default: `imperial`)
+2. **In config:** Set `unit_system: metric` under `[settings]` in `config.yaml`
+3. **At runtime:** Toggle the switch on the **Settings → Measurements** card
+
+## How it works
+
+| Metric | Imperial | Metric |
+|---|---|---|
+| Distance | miles (mi) | kilometres (km) |
+| Speed / Pace | min:sec/mi | min:sec/km |
+| Elevation | feet (ft) | metres (m) |
+| Weight | pounds (lbs) | kilograms (kg) |
+| Temperature | °F | °C |
+
+### Weight storage
+
+All weight values are **stored internally in the unit you enter**. The database column is `weight_lbs` for historical reasons, but the value stored reflects whichever unit system is active at the time of entry. All other measurements (distance, speed, elevation) are always stored in imperial units from the Strava API and converted at the display layer only — no data migration is needed when switching systems.
+
+> **Note:** If you switch from imperial to metric (or vice versa) after entering your weight, you may need to re-enter your weight in the new unit on the Settings → Athlete card.
+
+Environment variable override:
+```sh
+FITLY_SETTINGS_UNIT_SYSTEM=metric
 ```

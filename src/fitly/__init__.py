@@ -1,5 +1,6 @@
 from flask import Flask
 from dash import Dash
+import sqlite3
 
 from .__version__ import __version__
 from .utils import get_dash_args_from_flask_config, config
@@ -78,6 +79,22 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
             cursor.execute(f"PRAGMA mmap_size={mmap_size_mb * 1024 * 1024}")
             cursor.execute(f"PRAGMA wal_autocheckpoint={wal_autocheckpoint}")
             break
+        except sqlite3.OperationalError as e:
+            if "disk I/O error" in str(e):
+                logger.warning(f"Disk I/O error blocking SQLite PRAGMA configuration on the current filesystem. Disabling explicit journal formats: {e}")
+                try:
+                    cursor.execute("PRAGMA synchronous=NORMAL")
+                    cursor.execute(f"PRAGMA cache_size=-{cache_size_mb * 1000}")
+                    cursor.execute("PRAGMA temp_store=MEMORY")
+                    cursor.execute(f"PRAGMA mmap_size={mmap_size_mb * 1024 * 1024}")
+                except Exception as fallback_e:
+                    logger.warning(f"Secondary PRAGMA overwrite attempt bypassed: {fallback_e}")
+                break
+            else:
+                if attempt < 2:
+                    time.sleep(0.5)
+                else:
+                    raise
         except Exception:
             if attempt < 2:
                 time.sleep(0.5)
@@ -89,7 +106,17 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     dbapi_connection.isolation_level = isolation_level
 
 def create_dash(server):
-    Base.metadata.create_all(bind=engine)
+    # Retry create_all to prevent 'database is locked' errors if multiple gunicorn workers hit an empty SQLite file concurrently
+    for attempt in range(5):
+        try:
+            Base.metadata.create_all(bind=engine)
+            break
+        except Exception as e:
+            if attempt < 4:
+                import time
+                time.sleep(0.5)
+            else:
+                pass
 
     """Create the Dash instance for this application"""
     app = Dash(
@@ -120,10 +147,10 @@ def db_startup(app):
     # Fetch the first athlete record, if one exists
     dummy_athlete = app.session.query(athlete).first()
     
-    # If the database is completely empty, create the baseline athlete
+    # If the database is completely empty, create the baseline athlete securely using merge
     if not dummy_athlete:
-        dummy_athlete = athlete(name='Will')
-        app.session.add(dummy_athlete)
+        dummy_athlete = athlete(athlete_id=1, name='Will')
+        dummy_athlete = app.session.merge(dummy_athlete)
     
     # Forcefully populate the required dummy values if they are missing
     if not dummy_athlete.birthday:
@@ -139,8 +166,10 @@ def db_startup(app):
     if dummy_athlete.ride_ftp is None:
         dummy_athlete.ride_ftp = 300
         
-    # Commit all changes to the database
-    app.session.commit()
+    try:
+        app.session.commit()
+    except Exception:
+        app.session.rollback()
 
     # ... move on to the dbRefreshStatus logic ...
 # def db_startup(app):
@@ -171,13 +200,15 @@ def db_startup(app):
             strava_status='System Startup',
             withings_status='System Startup',
             fitbod_status='System Startup')
-        app.session.add(dummy_db_refresh_record)
-        app.session.commit()
+        try:
+            app.session.add(dummy_db_refresh_record)
+            app.session.commit()
+        except Exception:
+            app.session.rollback()
 
     # ... rest of the fitbod_muscles code stays the same ...
 
-    # If fitbod_muslces table not populated create
-    fitbod_muscles_table = True if len(app.session.query(fitbod_muscles).all()) > 0 else False
+    fitbod_muscles_table = True if app.session.query(fitbod_muscles).first() else False
     if not fitbod_muscles_table:
         for exercise, muscle in [
             # Abs

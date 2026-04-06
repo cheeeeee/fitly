@@ -23,6 +23,7 @@ from ..api.fitlyAPI import training_workflow
 from ..app import app
 from flask import current_app as server
 from ..utils import peloton_credentials_supplied, oura_credentials_supplied, withings_credentials_supplied, config
+from ..units import is_metric, set_unit_system, weight_label, weight, weight_to_lbs
 import json
 import ast
 import urllib.parse as urlparse
@@ -30,16 +31,20 @@ from urllib.parse import parse_qs
 from dash import no_update
 
 strava_auth_client = get_strava_client()
-withings_auth_client = WithingsAuth(config.get('withings', 'client_id'), config.get('withings', 'client_secret'),
-                                    callback_uri=config.get('withings', 'redirect_uri'), scope=(
-        AuthScope.USER_ACTIVITY, AuthScope.USER_METRICS, AuthScope.USER_INFO, AuthScope.USER_SLEEP_EVENTS
-    ))
+withings_auth_client = WithingsAuth(
+    config.get('withings', 'client_id'), 
+    config.get('withings', 'client_secret'),
+    callback_uri=config.get('withings', 'redirect_uri') or 'http://127.0.0.1:8050/settings?withings', 
+    scope=(AuthScope.USER_ACTIVITY, AuthScope.USER_METRICS, AuthScope.USER_INFO, AuthScope.USER_SLEEP_EVENTS)
+)
 oura_auth_client = OuraOAuth2Client(client_id=config.get('oura', 'client_id'),
                                     client_secret=config.get('oura', 'client_secret'))
 
-spotify_auth_client = tk.UserAuth(tk.Credentials(client_id=config.get('spotify', 'client_id'),
-                                                 client_secret=config.get('spotify', 'client_secret'),
-                                                 redirect_uri=config.get('spotify', 'redirect_uri')), tk.scope.every)
+spotify_auth_client = tk.UserAuth(tk.Credentials(
+    client_id=config.get('spotify', 'client_id'),
+    client_secret=config.get('spotify', 'client_secret'),
+    redirect_uri=config.get('spotify', 'redirect_uri') or 'http://127.0.0.1:8050/settings?spotify'
+), tk.scope.every)
 
 
 def get_layout(**kwargs):
@@ -310,7 +315,7 @@ def athlete_card():
             generate_entry_field('name', 'Name', athlete_info.name),
             generate_entry_field('birthday', 'Birthday', athlete_info.birthday, input_type='date'),
             generate_entry_field('sex', 'Sex (M/F)', athlete_info.sex),
-            generate_entry_field('weight', 'Weight (lbs)', athlete_info.weight_lbs),
+            generate_entry_field('weight', 'Weight ({})'.format(weight_label()), round(weight(athlete_info.weight_lbs), 1) if athlete_info.weight_lbs else None),
             generate_entry_field('rest-hr', 'Resting HR', athlete_info.resting_hr),
             generate_entry_field('ride-ftp', 'Ride FTP (Watts)', athlete_info.ride_ftp),
             generate_entry_field('run-ftp', 'Run FTP (Watts)', athlete_info.run_ftp),
@@ -356,12 +361,15 @@ def athlete_card():
 
 
 def generate_hr_zone_card():
-    rhr = pd.read_sql(
-        sql=app.session.query(ouraSleepSummary.hr_lowest).statement,
-        con=engine)
-    rhr = int(rhr.loc[rhr.index.max()]['hr_lowest']) if len(rhr) > 0 else 0
     athlete_info = app.session.query(athlete).filter(athlete.athlete_id == 1).first()
     birthday = athlete_info.birthday
+    
+    rhr = athlete_info.resting_hr
+    if not rhr:
+        rhr_df = pd.read_sql(
+            sql=app.session.query(ouraSleepSummary.hr_lowest).statement,
+            con=engine)
+        rhr = int(rhr_df.loc[rhr_df.index.max()]['hr_lowest']) if len(rhr_df) > 0 else 0
 
     app.session.remove()
 
@@ -575,7 +583,7 @@ def generate_settings_dashboard():
                  ]),
 
         html.Div(id='settings-shelf-2', className='row align-items-start text-center mt-2', children=[
-            html.Div(id='database-container', className='col-lg-4', children=[
+            html.Div(id='database-container', className='col-lg-3', children=[
                 dbc.Card(className='mb-2', children=[
                     dbc.CardHeader(html.H4(className='text-left mb-0', children='Database')),
                     dbc.CardBody(children=[
@@ -599,11 +607,33 @@ def generate_settings_dashboard():
                     ])
                 ])
             ]),
-            html.Div(id='athlete-container', className='col-lg-4',
+            html.Div(id='athlete-container', className='col-lg-3',
                      children=[html.Div(id='athlete', children=athlete_card())]),
 
-            html.Div(id='goal-container', className='col-lg-4',
+            html.Div(id='goal-container', className='col-lg-3',
                      children=[html.Div(id='goals', children=goal_parameters())]),
+
+            html.Div(id='measurements-container', className='col-lg-3', children=[
+                dbc.Card(className='mb-2', children=[
+                    dbc.CardHeader(html.H4(className='text-left mb-0', children='Measurements')),
+                    dbc.CardBody(className='align-items-center text-center', children=[
+                        html.Div(className='row align-items-center justify-content-center mb-2 mt-2', children=[
+                            html.H6('Imperial', className='col-4 text-right mb-0',
+                                    style={'opacity': '1.0' if not is_metric() else '0.5'}),
+                            html.Div(className='col-4', children=[
+                                daq.BooleanSwitch(
+                                    id='unit-system-switch',
+                                    on=is_metric(),
+                                )
+                            ]),
+                            html.H6('Metric', className='col-4 text-left mb-0',
+                                    style={'opacity': '1.0' if is_metric() else '0.5'}),
+                        ]),
+                        html.I(id='unit-system-status', className='fa fa-check',
+                               style={'display': 'none', 'color': 'green', 'fontSize': '150%'})
+                    ])
+                ])
+            ]),
         ]),
         html.Div(id='settings-shelf-3', className='row align-items-start text-center mt-2 mb-2', children=[
             html.Div(id='logs-container', className='col-lg-12',
@@ -679,7 +709,7 @@ def save_athlete_section(
         success = success and update_athlete_db_value(name_value, 'name')
         success = success and update_athlete_db_value(birthday_value, 'birthday')
         success = success and update_athlete_db_value(sex_value, 'sex')
-        success = success and update_athlete_db_value(weight_value, 'weight_lbs')
+        success = success and update_athlete_db_value(weight_to_lbs(weight_value), 'weight_lbs')
         success = success and update_athlete_db_value(rest_hr_value, 'resting_hr')
         success = success and update_athlete_db_value(ride_ftp_value, 'ride_ftp')
         success = success and update_athlete_db_value(run_ftp_value, 'run_ftp')
@@ -922,6 +952,22 @@ def save_athlete_settings(
             output_styles[index2] = {'display': 'none'}
 
     return output_styles
+
+
+# Callback for toggling measurement system (imperial/metric)
+@app.callback(
+    Output('unit-system-status', 'style'),
+    [Input('unit-system-switch', 'on')]
+)
+def toggle_unit_system(is_on):
+    system = 'metric' if is_on else 'imperial'
+    try:
+        set_unit_system(system)
+        app.server.logger.info('Measurement system set to: {}'.format(system))
+        return {'display': 'inline-block', 'color': 'green', 'fontSize': '150%'}
+    except BaseException as e:
+        app.server.logger.error(e)
+        return {'display': 'none'}
 
 
 # Callback for toggling auto-generation of spotify playlists

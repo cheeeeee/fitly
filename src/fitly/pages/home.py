@@ -17,6 +17,8 @@ from ..api.ouraAPI import top_n_correlations
 from ..api.database import engine
 from ..utils import calc_next_saturday, calc_prev_sunday, utc_to_local, config, oura_credentials_supplied, \
     withings_credentials_supplied
+from ..units import weight as conv_weight, weight_label, temperature_delta as conv_temp, temperature_label, \
+    distance as conv_distance, distance_label
 
 transition = int(config.get('dashboard', 'transition'))
 default_icon_color = 'rgb(220, 220, 220)'
@@ -628,8 +630,8 @@ def generate_content_kpi_trend(df_name, metric):
                    'cal_goal_percentage': 'Goal Progress (Cal)',
                    'cal_total': 'Total Burn (Cal)',
                    'steps': 'Steps',
-                   'daily_movement': 'Walking Equivalent (mi)',
-                   'weight': 'Weight: {:.0f} lbs'.format(df.loc[df.index.max()][metric]),
+                   'daily_movement': 'Walking Equivalent ({})'.format(distance_label()),
+                   'weight': 'Weight: {:.0f} {}'.format(conv_weight(df.loc[df.index.max()][metric]), weight_label()),
                    'fat_ratio': 'Body Fat: {:.0f}%'.format(df.loc[df.index.max()][metric])
                    }
 
@@ -652,8 +654,8 @@ def generate_content_kpi_trend(df_name, metric):
         metricTooltip = ['{:.0f} ms'.format(x) for x in df[metric]]
         metricAvgTooltip = ['<b>{} Day Avg:</b> {:.0f} ms'.format(rolling_days, x) for x in metricAvg]
     elif metric == 'temperature_delta':
-        metricTooltip = ['{:.1f}°F'.format(x * (9 / 5)) for x in df[metric]]
-        metricAvgTooltip = ['<b>{} Day Avg:</b> {:.1f}°F'.format(rolling_days, x * (9 / 5)) for x in metricAvg]
+        metricTooltip = ['{:.1f}{}'.format(conv_temp(x), temperature_label()) for x in df[metric]]
+        metricAvgTooltip = ['<b>{} Day Avg:</b> {:.1f}{}'.format(rolling_days, conv_temp(x), temperature_label()) for x in metricAvg]
     elif metric == 'breath_average':
         metricTooltip = ['{:.1f}'.format(x) for x in df[metric]]
         metricAvgTooltip = ['<b>{} Day Avg:</b> {:.1f}'.format(rolling_days, x) for x in metricAvg]
@@ -680,12 +682,13 @@ def generate_content_kpi_trend(df_name, metric):
         metricAvgTooltip = ['<b>{} Day Avg:</b> {:.0f}'.format(rolling_days, x) for x in metricAvg]
 
     elif metric == 'daily_movement':
-        metricTooltip = ['{:.1f} mi'.format(x * 0.000621371) for x in df[metric]]
-        metricAvgTooltip = ['<b>{} Day Avg:</b> {:.1f} mi'.format(rolling_days, x * 0.000621371) for x in metricAvg]
+        _dist_factor = 0.001 if distance_label() == 'km' else 0.000621371
+        metricTooltip = ['{:.1f} {}'.format(x * _dist_factor, distance_label()) for x in df[metric]]
+        metricAvgTooltip = ['<b>{} Day Avg:</b> {:.1f} {}'.format(rolling_days, x * _dist_factor, distance_label()) for x in metricAvg]
 
     elif metric == 'weight':
-        metricTooltip = ['{:.0f} lbs'.format(x) for x in df[metric]]
-        metricAvgTooltip = ['<b>{} Day Avg:</b> {:.0f} lbs'.format(rolling_days, x) for x in metricAvg]
+        metricTooltip = ['{:.0f} {}'.format(conv_weight(x), weight_label()) for x in df[metric]]
+        metricAvgTooltip = ['<b>{} Day Avg:</b> {:.0f} {}'.format(rolling_days, conv_weight(x), weight_label()) for x in metricAvg]
 
     elif metric == 'fat_ratio':
         metricTooltip = ['{:.0f}%'.format(x) for x in df[metric]]
@@ -2614,7 +2617,7 @@ def generate_oura_activity_content(date):
                     ]),
                     dbc.Button(id='walking-equivalency-button', className='col-lg-4 contentbutton', children=[
                         html.Div(children=['WALKING EQUIV.']),
-                        html.H6('{:.1f} mi'.format(df['daily_movement'].max() * 0.000621371),
+                        html.H6('{:.1f} {}'.format(conv_distance(df['daily_movement'].max() * 0.000621371), distance_label()),
                                 className='mb-0')
                     ])
                 ])
