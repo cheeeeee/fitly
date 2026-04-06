@@ -170,9 +170,10 @@ AVAILABLE_CPUS=$(( CPU_COUNT - 1 ))
 POOL_WORKERS=$(( CPU_COUNT / 2 ))
 [ "$POOL_WORKERS" -lt 1 ] && POOL_WORKERS=1
 
-CACHE_MB=$(( TOTAL_MEM / 4 ))
-[ "$CACHE_MB" -lt 32 ]  && CACHE_MB=32
-[ "$CACHE_MB" -gt 256 ] && CACHE_MB=256
+# Define single-thread SQLite cache limit (keeping in mind there are 4+ concurrent workers connecting)
+CACHE_MB=$(( TOTAL_MEM / 16 ))
+[ "$CACHE_MB" -lt 16 ]  && CACHE_MB=16
+[ "$CACHE_MB" -gt 64 ] && CACHE_MB=64
 
 if [ "$IS_SSD" -eq 1 ] || { [ "$IS_SD" -eq 0 ] && [ "$STORAGE_TYPE" = "eMMC" ]; }; then
     MMAP_MB=$CACHE_MB
