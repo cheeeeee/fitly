@@ -1,4 +1,4 @@
-name: Build and Publish ARM64 Image
+name: Build and Publish Multi-Arch Images
 
 on:
   push:
