@@ -14,7 +14,8 @@ scikit-learn>=1.5.0
 SQLAlchemy>=1.4.54
 stravalib==0.10.4
 sweat==0.4.0
-tekore==4.3.0
+tekore>=5.3.1
+httpx>=0.28.1
 Werkzeug>=3.1.6
 withings-api==2.4.0
 greenlet>=3.1.0
