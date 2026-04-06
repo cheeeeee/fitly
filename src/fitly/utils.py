@@ -245,7 +245,7 @@ class FitlyConfig:
 
 config = FitlyConfig()
 
-local_tz = pytz.timezone(config.get('timezone', 'timezone'))
+local_tz = pytz.timezone(config.get('timezone', 'timezone') or 'UTC')
 
 oura_credentials_supplied = True if config.get('oura', 'client_id').strip() and config.get('oura',
                                                                                            'client_secret').strip() else False
