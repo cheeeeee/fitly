@@ -1,10 +1,10 @@
 import pandas as pd
 import dash
-import dash_table
+from dash import dash_table
 from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
-import dash_core_components as dcc
-import dash_html_components as html
+from dash import dcc
+from dash import html
 from ..app import app
 from ..api.spotifyAPI import get_played_tracks
 from ..api.database import engine

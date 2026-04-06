@@ -1,10 +1,10 @@
 import dash
 from datetime import datetime, timedelta
 import dash_bootstrap_components as dbc
-import dash_core_components as dcc
+from dash import dcc
 import dash_daq as daq
-import dash_html_components as html
-import dash_table
+from dash import html
+from dash import dash_table
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
